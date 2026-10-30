@@ -14,6 +14,8 @@ var TV = (function () {
   var tizen2 = samsung && /Tizen 2\./.test(navigator.userAgent);
   // 2017 and 2018 Samsungs (Tizen 3 and 4) freeze opening their settings from an app (MU6100, MU6122, NU7400, #257).
   var tizen34 = samsung && /Tizen [34]\./.test(navigator.userAgent);
+  // Tizen 3 (2017) loads no app's iconPath at all.
+  var tizen3 = samsung && /Tizen 3\./.test(navigator.userAgent);
   // Tizen 2 (2016 TVs, WebKit 538) repaints every shadow on every frame of a focus animation: home.css turns them off.
   // So do LGs under 2 GB: an LG on webOS TV Lite 10 (MT5889, 1.3 GB, ratio 2) ran the shelf at 23-28 fps, 60 with lite
   // and 45 with only the shadows off (#318); a 43LR6700PSA on webOS TV Lite 8.5 (1.5 GB, ratio 1) at 45-50, 59 with
@@ -266,6 +268,10 @@ var TV = (function () {
         // The built-in Netflix stays only when the store's Netflix isn't installed.
         var store = out.some(function (x) { return /\.Netflix$/.test(x.id); });
         if (store) out = out.filter(function (x) { return x.id.indexOf('org.tizen.netflix') !== 0; });
+        // One icon file shared by several apps is Tizen's generic pinwheel, not theirs: those keep our logo.
+        var uses = {};
+        out.forEach(function (x) { if (x.original) uses[x.icon] = (uses[x.icon] || 0) + 1; });
+        out.forEach(function (x) { if (x.original && uses[x.icon] > 1) { x.original = false; x.icon = x.logo; } });
         // Smart Hub keeps its own order, which isn't readable: the same alphabetical order as All Apps elsewhere.
         out.sort(function (x, y) { var a = x.title.toLowerCase(), b = y.title.toLowerCase(); return a < b ? -1 : a > b ? 1 : 0; });
         done(out);
@@ -283,10 +289,13 @@ var TV = (function () {
     if (/^Amazon( Instant)? Video$/i.test(title)) title = 'Prime Video';
     var key = String(title).toLowerCase().replace(/[^a-z0-9]/g, '');
     var byName = Object.prototype.hasOwnProperty.call(SAMSUNG_ICON_NAMES, key) ? SAMSUNG_ICON_NAMES[key] : '';
-    if (SAMSUNG_ICONS[a.id] || byName) icon = SAMSUNG_ICONS[a.id] || byName;
+    // The app's own icon from Smart Hub comes first (the original, as the TV shows it); our bundled logo is what's
+    // left when it doesn't load (Tizen 3 loads none) or is the platform's generic one (samsungApps finds those).
+    var logo = SAMSUNG_ICONS[a.id] || byName || '';
+    var original = tizen3 ? '' : icon;
     var dial = key === 'netflix' ? 'Netflix' : key === 'youtube' ? 'YouTube' : /^(amazon)?primevideo$/.test(key) ? 'Amazon' : '';
     if (dial) samsungDial[a.id] = dial;
-    return {id: a.id, title: title, icon: icon, color: ''};
+    return {id: a.id, title: title, icon: original || logo, logo: logo, original: !!original, color: ''};
   }
 
   /**

@@ -1,7 +1,10 @@
 /*
  * The home screen for web-app TVs (LG webOS, Samsung Tizen), in Apple TV's style:
  *  - a glass tab bar at the top: Home, Games, Streaming, Music, Apps, and Home Settings; focusing a tab shows it;
+ *  - a featured carousel under it that turns by itself (← → turn it, OK opens), in liquid glass: the art blurred
+ *    behind the tab bar, the clock and the buttons, and a lens that slides and stretches between the tabs;
  *  - the focused card's art full screen (a trending title from that app, or the brand's colors), its name large;
+ *  - the apps with the TV's own icons (the originals), or our logo on the brand's color where the TV has none;
  *  - rows of cards: the consoles (through the receiver's HDMI port), the streaming apps, the trending picks, music,
  *    shortcuts; going down a row lifts the rows over the art and hides the tab bar, Back comes up again;
  *  - always dark; a screensaver after a few idle minutes.
@@ -68,18 +71,18 @@
 
   /** Brands: key, LG/Samsung app id, name on the TV, tile gradient. */
   var SHELF = [
-    ['disney', /disney/i, /disney/i, ['#1A3C9C', '#06123F']],
+    ['disney', /disney/i, /disney/i, ['#1E4FB0', '#0A1446']],
     ['netflix', /netflix/i, /netflix/i, ['#141414', '#000000']],
-    ['prime', /^amazon$|primevideo|amazonignition/i, /prime video|amazon/i, ['#2AA8FF', '#0A68D4']],
-    ['youtube', /youtube(?!.*(kids|music))/i, /^youtube$/i, ['#FF1A3C', '#C4001F']],
-    ['globoplay', /globoplay/i, /globoplay/i, ['#FF8A1F', '#FF2D5A']],
+    ['prime', /^amazon$|primevideo|amazonignition/i, /prime video|amazon/i, ['#1B2A3A', '#0B141D']],
+    ['youtube', /youtube(?!.*(kids|music))/i, /^youtube$/i, ['#282828', '#0F0F0F']],
+    ['globoplay', /globoplay/i, /globoplay/i, ['#FF7A1F', '#F0256A']],
     ['max', /hbo|wbd/i, /^(hbo )?max$|hbo max/i, ['#5C30E8', '#221684']],
     ['appletv', /appletv|apple\.tv/i, /apple tv/i, ['#2C2C2E', '#000000']],
     ['paramount', /paramount|cbs/i, /paramount/i, ['#0064FF', '#002A86']],
     ['hulu', /^hulu/i, /hulu/i, ['#1CE783', '#0B8F4E']],
     ['peacock', /peacock/i, /peacock/i, ['#1C1C1E', '#000000']],
     ['jellyfin', /jellyfin/i, /jellyfin/i, ['#AA5CC3', '#00A4DC']],
-    ['spotify', /spotify/i, /spotify/i, ['#1ED760', '#0F7A36']]
+    ['spotify', /spotify/i, /spotify/i, ['#1F1F1F', '#000000']]
   ];
 
   // The streaming row, in this order when installed (Home Settings → Streaming row changes it on the TV).
@@ -91,8 +94,11 @@
   /** White logos bundled in web/icons, for the big art behind the title (and tiles whose icon the TV doesn't give). */
   var LOGOS = {
     netflix: 'icons/netflix.svg', youtube: 'icons/youtube.png', prime: 'icons/prime.png', max: 'icons/max.svg',
-    appletv: 'icons/appletv.svg', paramount: 'icons/paramountplus.svg', jellyfin: 'icons/jellyfin.svg', spotify: 'icons/spotify.svg'
+    appletv: 'icons/appletv.svg', paramount: 'icons/paramountplus.svg', jellyfin: 'icons/jellyfin.svg', spotify: 'icons/spotify-green.svg'
   };
+
+  /** Brands without a logo here: their name, set in the style of theirs. */
+  var WORDMARK = {disney: 'wm-disney', globoplay: 'wm-globoplay'};
 
   /** The colors of each brand's art, full screen: its own color, fading to black. */
   var ART = {
@@ -296,15 +302,75 @@
     }
   }
 
-  /** An app's face: its logo on its brand color (or its name, when the icon can't be read). */
+  /** An app's face: the TV's own icon for it, as it is (the original), or else its logo on its brand color. */
   function face(app, box, wordSize) {
+    if (app.original && app.icon) originalFace(app, box, wordSize);
+    else brandFace(app, box, wordSize, app.logo || app.icon);
+  }
+
+  var edges = {};   // icon url -> what's around its logo: {kind: 'solid' | 'clear' | 'picture', bg: [r, g, b]}
+
+  /**
+   * What fills the icon's edges, away from its rounded corners: one color (the card takes it, so the icon seems to
+   * fill it), nothing (a logo on its own: the brand's color behind it) or a picture (it covers the card).
+   */
+  function edgeOf(img) {
+    var w = 64, h = Math.max(1, Math.round(64 * img.naturalHeight / Math.max(1, img.naturalWidth)));
+    var canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    var px;
+    try {
+      var g = canvas.getContext('2d');
+      g.drawImage(img, 0, 0, w, h);
+      px = g.getImageData(0, 0, w, h).data;
+    } catch (e) {
+      return {kind: 'solid', bg: [0, 0, 0]};   // a TV that doesn't let the page read its icons
+    }
+    var votes = {}, best = null, bestN = 0, n = 0, inset = 2;
+    for (var s = 0; s < 64; s++) {
+      var t = 0.2 + (s % 16) / 16 * 0.6, side = s >> 4;
+      var x = side < 2 ? Math.round(t * (w - 1)) : side === 2 ? inset : w - 1 - inset;
+      var y = side < 2 ? (side === 0 ? inset : h - 1 - inset) : Math.round(t * (h - 1));
+      var i = (y * w + x) * 4;
+      var key = px[i + 3] < 128 ? 'clear' : (px[i] >> 4) + ',' + (px[i + 1] >> 4) + ',' + (px[i + 2] >> 4);
+      votes[key] = (votes[key] || 0) + 1;
+      n++;
+      if (votes[key] > bestN) { bestN = votes[key]; best = key === 'clear' ? null : [px[i], px[i + 1], px[i + 2]]; }
+    }
+    if (bestN < n * 0.6) return {kind: 'picture'};
+    return best ? {kind: 'solid', bg: best} : {kind: 'clear'};
+  }
+
+  /** The TV's own icon, whole, on the card's full height; its own background fills the sides. */
+  function originalFace(app, box, wordSize) {
+    var img = el('img', 'orig', box), url = app.icon, k = shelfKey(app);
+    box.style.background = '#1C1C1E';
+    img.onerror = function () { box.innerHTML = ''; brandFace(app, box, wordSize, app.logo); };
+    img.onload = function () {
+      img.onload = null;
+      if (!edges[url]) edges[url] = edgeOf(img);
+      var e = edges[url];
+      if (e.kind === 'solid') box.style.background = 'rgb(' + e.bg.join(',') + ')';
+      else if (e.kind === 'picture') setClass(img, 'cover', true);
+      else {
+        setClass(img, 'fit', true);
+        paint(box, k ? k[3][0] : '#2A2A2E', k ? k[3][1] : '#161618');
+      }
+    };
+    img.src = url;
+  }
+
+  /** Our logo for the app on its brand color (or its name, when there's no logo). */
+  function brandFace(app, box, wordSize, logo) {
     var k = shelfKey(app);
     var top = k ? k[3][0] : app.color ? darken(app.color, 0.92) : '#2A2A2E';
     var bottom = k ? k[3][1] : app.color ? darken(app.color, 0.62) : '#161618';
     paint(box, top, bottom);
     var word = el('div', 'word', box, app.title);
     if (wordSize) word.style.fontSize = wordSize + 'px';
-    var url = app.icon || (k && LOGOS[k[0]]) || '';   // the TV gave no icon: our own logo, if there is one
+    if (k && WORDMARK[k[0]]) setClass(word, WORDMARK[k[0]], true);
+    var url = (k && LOGOS[k[0]]) || logo || '';
     if (url) {
       var img = el('img', '', box);
       word.style.visibility = 'hidden';
@@ -365,18 +431,19 @@
 
   // MARK: - Focus
 
-  var Z = {TABS: 'tabs', ROWS: 'rows', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', CITY: 'city', KEY: 'key', ABOUT: 'about'};
-  var st = {zone: Z.ROWS, tab: 0, tabFocus: 0, line: 0, col: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0};
+  var Z = {TABS: 'tabs', HERO: 'hero', ROWS: 'rows', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', CITY: 'city', KEY: 'key', ABOUT: 'about'};
+  var st = {zone: Z.ROWS, tab: 0, tabFocus: 0, page: 0, line: 0, col: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0};
 
   function isSheet(zone) { return zone === Z.SETTINGS || zone === Z.EDIT || zone === Z.LANG || zone === Z.CITY || zone === Z.KEY || zone === Z.ABOUT; }
   function sheetOpen() { return isSheet(st.zone); }
 
   function updateFocus() {
-    var i, list = $('tabbar').firstChild.children;
+    var i, list = tabsBox().children;
     for (i = 0; i < list.length; i++) {
       setClass(list[i], 'on', i === st.tab);
       setClass(list[i], 'focus', st.zone === Z.TABS && st.tabFocus === i);
     }
+    placeLens();
     var nodes = $('rows').children, deep = st.zone === Z.ROWS && st.line > 0;
     for (var r = 0; r < nodes.length; r++) {
       var items = nodes[r].lastChild.children;
@@ -394,6 +461,7 @@
     if (langHint) langHint.textContent = (st.lang + 1) + ' / ' + languageChoices().length + '  ·  ' + tr('OK picks, Back cancels.');
     focusRows($('citypick'), st.city, st.zone === Z.CITY);
     focusRows($('keypick'), st.key, st.zone === Z.KEY);
+    frostAll();
   }
 
   function focusRows(sheet, index, on) {
@@ -414,13 +482,46 @@
       : key === 'music' ? L('Música', 'Music') : 'Apps';
   }
 
+  function tabsBox() { return $('tabbar').querySelector('.tabs'); }
+
   function renderTabs() {
-    var pill = $('tabbar').firstChild;
-    pill.innerHTML = '';
-    for (var i = 0; i < TABS.length; i++) hover(el('div', 'tab', pill, tabName(TABS[i])), Z.TABS, i);
-    var gear = el('div', 'tab icon', pill);
+    var box = tabsBox();
+    box.innerHTML = '';
+    for (var i = 0; i < TABS.length; i++) hover(el('div', 'tab', box, tabName(TABS[i])), Z.TABS, i);
+    var gear = el('div', 'tab icon', box);
     sym('settings', gear);
     hover(gear, Z.TABS, TABS.length);
+    lensAt = null;
+  }
+
+  var lensAt = null;
+
+  /**
+   * The lens under the selected (or focused) tab: two round caps and a middle that stretches between them. Going
+   * right, the right cap leads and the left one follows later, so the lens stretches and settles like a drop.
+   */
+  function placeLens() {
+    var tab = tabsBox().children[st.zone === Z.TABS ? st.tabFocus : st.tab];
+    var lens = $('tabbar').querySelector('.lens');
+    if (!tab || !lens) return;
+    var x = tab.offsetLeft, w = tab.offsetWidth, parts = lens.children;
+    setClass(lens, 'hot', st.zone === Z.TABS);
+    if (x === lensAt && parts[1].style.width === w + 'px') return;
+    var first = lensAt === null, right = x >= lensAt;
+    var lead = first ? '0s' : '0.32s', mid = first ? '0s' : '0.42s', tail = first ? '0s' : '0.54s';
+    var curve = ' cubic-bezier(0.3, 1.25, 0.4, 1)';
+    var timing = [right ? tail : lead, mid, right ? lead : tail];
+    for (var i = 0; i < 3; i++) {
+      parts[i].style.webkitTransition = '-webkit-transform ' + timing[i] + curve;
+      parts[i].style.transition = 'transform ' + timing[i] + curve;
+    }
+    // Round caps (whole circles) at both ends, the middle from one's center to the other's: no corner shows.
+    var cap = 72;
+    parts[0].style.webkitTransform = parts[0].style.transform = 'translateX(' + x + 'px)';
+    parts[1].style.webkitTransform = parts[1].style.transform = 'translateX(' + (x + cap / 2) + 'px) scaleX(' + Math.max(1, w - cap) + ')';
+    parts[2].style.webkitTransform = parts[2].style.transform = 'translateX(' + (x + w - cap) + 'px)';
+    parts[1].style.width = '1px';
+    lensAt = x;
   }
 
   /** As on Apple TV, focusing a tab shows it: its rows at once, from the start. */
@@ -429,6 +530,8 @@
     st.tab = i;
     st.line = 0;
     st.col = 0;
+    st.page = 0;
+    heroDir = 0;
     var holder = $('rows');
     holder.style.webkitTransition = holder.style.transition = 'none';
     renderRows();
@@ -481,6 +584,8 @@
     var holder = $('rows');
     holder.innerHTML = '';
     lines = buildLines(TABS[st.tab]);
+    featured = buildFeatured(TABS[st.tab]);
+    st.page = featured.length ? st.page % featured.length : 0;
     var y = TOP_FIRST;
     for (var r = 0; r < lines.length; r++) {
       var line = lines[r], size = SIZES[line.kind];
@@ -510,16 +615,18 @@
     st.line = Math.max(0, Math.min(st.line, lines.length - 1));
     st.col = lines.length ? Math.max(0, Math.min(st.col, lines[st.line].items.length - 1)) : 0;
     if (!lines.length && st.zone === Z.ROWS) st.zone = Z.TABS;
+    if (!featured.length && st.zone === Z.HERO) st.zone = Z.TABS;
     updateFocus();
   }
 
-  /** The strip slides so its focused card is in view, a card at a time; the others keep where they were. */
+  /** The focused row's strip slides to its card; the other rows keep where they were left. */
   function reveal(r) {
     var line = lines[r], node = $('rows').children[r];
     if (!line || !node) return;
-    var col = r === st.line ? st.col : 0, x = LEFT + col * (line.w + line.gap) - line.scroll;
-    if (x + line.w > RIGHT) line.scroll += x + line.w - RIGHT;
-    else if (x < LEFT) line.scroll -= LEFT - x;
+    // As on Apple TV, the focused card stays at the row's start and the row glides under it, until its last cards
+    // are all in view.
+    var step = line.w + line.gap, room = RIGHT - LEFT, total = line.items.length * step - line.gap;
+    line.scroll = Math.max(0, Math.min(st.col * step, total - room));
     var strip = node.lastChild;
     strip.style.webkitTransform = strip.style.transform = 'translateX(' + (-line.scroll) + 'px)';
   }
@@ -544,7 +651,7 @@
   function appItem(app) {
     var k = shelfKey(app), key = k ? k[0] : '';
     return {
-      kind: 'app', label: app.title,
+      kind: 'app', label: app.title, go: isMusic(app) ? L('Ouvir', 'Listen') : L('Abrir', 'Open'),
       draw: function (box, line) { face(app, box, wordFit(app.title, line.w, line.w > 300 ? 46 : 38)); },
       hero: function () {
         var p = trendingOn(app), about = ABOUT[key];
@@ -570,7 +677,7 @@
 
   function consoleItem(c) {
     return {
-      kind: 'console',
+      kind: 'console', go: L('Jogar', 'Play'),
       draw: function (box, line) {
         paint(box, c.tile[0], c.tile[1]);
         el('div', 'glow', box);
@@ -601,7 +708,7 @@
   function pickItem(p) {
     var app = p.app ? Data.appFor(p.app) : null;
     return {
-      kind: 'pick',
+      kind: 'pick', go: L('Assistir', 'Watch'),
       draw: function (box) {
         box.style.backgroundImage = 'url(' + Data.image(p.backdrop, 'w780') + ')';
         el('div', 'shadeb', box);
@@ -673,24 +780,126 @@
 
   var heroNow = null;
 
+  var heroDir = 0;   // the carousel turned: 1 forward, -1 back (the text slides in from that side)
+
+  /** The featured carousel shows while the focus is on the tab bar or on it; otherwise, the focused card. */
+  function showingFeatured() { return featured.length > 0 && (st.zone === Z.TABS || st.zone === Z.HERO); }
+
   function renderHero() {
-    var it = current(), h = it ? it.hero() : null, hero = $('hero');
+    var feat = showingFeatured(), it = feat ? featured[st.page % featured.length] : current();
+    var h = it ? it.hero() : null, hero = $('hero'), text = hero.querySelector('.text');
     if (!h) { hero.style.visibility = 'hidden'; return; }
     hero.style.visibility = '';
+    setClass(hero, 'featured', feat);
+    var cta = hero.querySelector('.cta');
+    setClass(cta, 'focus', st.zone === Z.HERO);
+    var dots = hero.querySelector('.dots'), shown = dots.querySelectorAll('.dot');
+    if (shown.length !== featured.length) {
+      for (var d = 0; d < shown.length; d++) dots.removeChild(shown[d]);
+      for (d = 0; d < featured.length; d++) el('span', 'dot', dots);
+      shown = dots.querySelectorAll('.dot');
+    }
+    for (d = 0; d < shown.length; d++) setClass(shown[d], 'on', d === st.page % featured.length);
+    dots.style.visibility = featured.length > 1 ? '' : 'hidden';
     var sig = [h.kicker, h.name, h.info, h.badge, h.desc].join('|');
     if (sig !== heroNow) {
       heroNow = sig;
-      hero.children[0].textContent = h.kicker || '';
-      var name = hero.children[1];
-      name.textContent = h.name || '';
-      name.style.fontSize = (h.name && h.name.length > 22 ? 72 : 92) + 'px';
-      var info = hero.children[2];
-      info.innerHTML = '';
-      if (h.badge) el('span', 'badge', info, h.badge);
-      if (h.info) info.appendChild(document.createTextNode(h.info));
-      hero.children[3].textContent = h.desc || '';
+      var parts = text.children;
+      parts[0].textContent = h.kicker || '';
+      parts[1].textContent = h.name || '';
+      parts[1].style.fontSize = (h.name && h.name.length > 22 ? 72 : 92) + 'px';
+      parts[2].innerHTML = '';
+      if (h.badge) el('span', 'badge', parts[2], h.badge);
+      if (h.info) parts[2].appendChild(document.createTextNode(h.info));
+      parts[3].textContent = h.desc || '';
+      var go = cta.querySelector('.go'), icon = cta.querySelector('.sym');
+      go.textContent = it.go || L('Abrir', 'Open');
+      icon.style.webkitMaskImage = icon.style.maskImage = 'url(symbols/play.png)';
+      if (heroDir) {   // the carousel turned: the text slides in from the side it came from
+        setClass(text, 'turn', false);
+        setClass(text, 'back', false);
+        void text.offsetWidth;
+        setClass(text, heroDir > 0 ? 'turn' : 'back', true);
+      }
     }
+    heroDir = 0;
     artSoon(h.art);
+  }
+
+  /** Featured, for each tab: what the carousel at the top turns through. */
+  var featured = [];
+
+  function buildFeatured(tab) {
+    var picks = Data.showcase().filter(function (p) { return p.backdrop && p.app && Data.appFor(p.app); });
+    var out = [];
+    if (tab === 'home') out = picks.slice(0, 3).map(pickItem).concat(CONSOLES.map(consoleItem), shelf.slice(0, 3).map(appItem));
+    else if (tab === 'games') out = CONSOLES.map(consoleItem);
+    else if (tab === 'streaming') out = picks.length ? picks.slice(0, 6).map(pickItem) : shelf.map(appItem);
+    else if (tab === 'music') out = musicApps().slice(0, 4).map(appItem);
+    return out.slice(0, 9);
+  }
+
+  /** The carousel turns by itself every few seconds while it shows and nobody presses anything. */
+  var TURN_MS = 8000;
+  setInterval(function () {
+    if (saverOn || ambientOn || sheetOpen() || !showingFeatured() || featured.length < 2 || Date.now() - idleAt < TURN_MS) return;
+    st.page = (st.page + 1) % featured.length;
+    heroDir = 1;
+    updateFocus();
+  }, TURN_MS);
+
+  // MARK: - Liquid glass: the art behind each glass piece, blurred
+
+  // The art, drawn tiny: stretched back to the screen's size it is as soft as a heavy blur, and cheap on any TV.
+  var frostSrc = document.createElement('canvas');
+  frostSrc.width = 64;
+  frostSrc.height = 36;
+
+  /** Where a node is on the 1920 × 1080 stage (the stage may be scaled to the window). */
+  function stageXY(node) {
+    var r = node.getBoundingClientRect(), s = stage.getBoundingClientRect(), k = s.width / 1920 || 1;
+    return {x: (r.left - s.left) / k, y: (r.top - s.top) / k};
+  }
+
+  function frostInto(node) {
+    var c = node.firstChild;
+    if (!c || c.className !== 'frost') {
+      c = document.createElement('canvas');
+      c.className = 'frost';
+      c.width = 64;
+      c.height = 36;
+      node.insertBefore(c, node.firstChild);
+    }
+    var p = stageXY(node);
+    c.style.left = Math.round(-p.x) + 'px';
+    c.style.top = Math.round(-p.y) + 'px';
+    var g = c.getContext('2d');
+    g.clearRect(0, 0, 64, 36);
+    g.drawImage(frostSrc, 0, 0);
+  }
+
+  function frostAll() {
+    var nodes = [$('tabbar').querySelector('.pill'), $('status'), $('hero').querySelector('.cta'), $('hero').querySelector('.dots')];
+    var boxes = document.querySelectorAll('.sheet.open .box');
+    for (var b = 0; b < boxes.length; b++) { setClass(boxes[b], 'glass', true); nodes.push(boxes[b]); }
+    for (var i = 0; i < nodes.length; i++) if (nodes[i]) frostInto(nodes[i]);
+  }
+
+  /** The glass takes the new art: a photo, or the brand's colors as the art draws them. */
+  function frostArt(art, img) {
+    var g = frostSrc.getContext('2d');
+    if (img) {
+      try { g.drawImage(img, 0, 0, 64, 36); } catch (e) {}
+    } else {
+      var cx = 0.74 * 64, cy = 0.26 * 36, r = Math.sqrt(cx * cx + (36 - cy) * (36 - cy));
+      var grad = g.createRadialGradient(cx, cy, 0, cx, cy, r);
+      grad.addColorStop(0, art.colors[0]);
+      grad.addColorStop(0.62, art.colors[1]);
+      grad.addColorStop(1, '#000');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 64, 36);
+    }
+    frostAll();
   }
 
   var artKey = null, artFront = 'artA', artTimer = 0, ART_FOLLOW_MS = 260;
@@ -723,6 +932,7 @@
         node.style.backgroundSize = 'cover';
         node.style.backgroundPosition = 'center top';
         swap();
+        frostArt(art, img);
       };
       img.src = art.img;
       return;
@@ -736,18 +946,19 @@
       m.src = art.logo;
     }
     swap();
+    frostArt(art, null);
   }
 
   // MARK: - Status: the time and the weather
 
   function renderStatus() {
-    var s = $('status'), d = new Date(), w = Prefs.weather() ? Data.weather : null, wx = s.firstChild;
+    var s = $('status'), d = new Date(), w = Prefs.weather() ? Data.weather : null, wx = s.querySelector('.wx');
     wx.innerHTML = '';
     if (w) {
       sym(Data.symbol(w.code, w.isDay), wx);
       wx.appendChild(document.createTextNode(Data.degrees(w.temp)));
     }
-    s.lastChild.textContent = formatDate('format|h:mm', d.getTime());
+    s.querySelector('.time').textContent = formatDate('format|h:mm', d.getTime());
   }
 
   /** On the minute, so the clock never runs late. */
@@ -1287,7 +1498,11 @@
     switch (st.zone) {
       case Z.TABS:
         if (st.tabFocus === TABS.length) openSettings();
+        else if (featured.length) { st.zone = Z.HERO; updateFocus(); }
         else if (lines.length) { st.zone = Z.ROWS; st.line = 0; updateFocus(); }
+        return;
+      case Z.HERO:
+        if (featured[st.page]) featured[st.page].run();
         return;
       case Z.ROWS:
         var it = current();
@@ -1320,18 +1535,32 @@
         if (dx) {
           st.tabFocus = Math.max(0, Math.min(TABS.length, st.tabFocus + dx));
           if (st.tabFocus < TABS.length) selectTab(st.tabFocus);
+        } else if (dy > 0 && st.tabFocus < TABS.length && featured.length) {
+          st.zone = Z.HERO;
         } else if (dy > 0 && lines.length) {
           st.zone = Z.ROWS;
           st.line = 0;
         }
         break;
+      case Z.HERO:
+        if (dx) { st.page = (st.page + dx + featured.length) % featured.length; heroDir = dx; }
+        else if (dy < 0) { st.zone = Z.TABS; st.tabFocus = st.tab; }
+        else if (dy > 0 && lines.length) { st.zone = Z.ROWS; st.line = 0; }
+        break;
       case Z.ROWS:
         var line = lines[st.line];
-        if (dx && line) st.col = Math.max(0, Math.min(line.items.length - 1, st.col + dx));
-        else if (dy < 0) {
-          if (st.line === 0) { st.zone = Z.TABS; st.tabFocus = st.tab; }
-          else moveLine(-1);
-        } else if (dy > 0) moveLine(1);
+        if (dx && line) {
+          var col = Math.max(0, Math.min(line.items.length - 1, st.col + dx));
+          if (col === st.col) bump(dx);
+          st.col = col;
+        } else if (dy < 0) {
+          if (st.line > 0) moveLine(-1);
+          else if (featured.length) st.zone = Z.HERO;
+          else { st.zone = Z.TABS; st.tabFocus = st.tab; }
+        } else if (dy > 0) {
+          if (st.line < lines.length - 1) moveLine(1);
+          else bump(0);
+        }
         break;
       case Z.SETTINGS:
         if (dy) st.row = Math.max(0, Math.min(rowsNow.length - 1, st.row + dy));
@@ -1357,6 +1586,17 @@
     updateFocus();
   }
 
+  /** Nowhere to go that way: the focused card leans toward it and comes back. */
+  function bump(dx) {
+    var node = $('rows').children[st.line], item = node && node.lastChild.children[st.col];
+    if (!item || !dx) return;
+    setClass(item, 'bump-r', false);
+    setClass(item, 'bump-l', false);
+    void item.offsetWidth;
+    setClass(item, dx > 0 ? 'bump-r' : 'bump-l', true);
+    setTimeout(function () { setClass(item, 'bump-r', false); setClass(item, 'bump-l', false); }, 400);
+  }
+
   /** Back, as on Apple TV: to the first row, then to the tab bar, then to Home, then out. */
   function back() {
     if (st.zone === Z.EDIT) {
@@ -1372,7 +1612,7 @@
     if (st.zone === Z.ABOUT) { closeAbout(); return; }
     if (sheetOpen()) { closeSheets(); return; }
     if (st.zone === Z.ROWS && st.line > 0) { st.line = 0; st.col = 0; updateFocus(); return; }
-    if (st.zone === Z.ROWS) { st.zone = Z.TABS; st.tabFocus = st.tab; updateFocus(); return; }
+    if (st.zone === Z.ROWS || st.zone === Z.HERO) { st.zone = Z.TABS; st.tabFocus = st.tab; updateFocus(); return; }
     if (st.tab !== 0 || st.tabFocus !== 0) { st.tabFocus = 0; selectTab(0); return; }
     TV.back();
   }
@@ -1383,6 +1623,7 @@
       if (saverOn || sheetOpen() !== isSheet(zone)) return;
       st.zone = zone;
       if (zone === Z.TABS) { st.tabFocus = index; if (index < TABS.length) selectTab(index); }
+      else if (zone === Z.HERO && !featured.length) return;
       else if (zone === Z.ROWS) { st.line = Math.floor(index / 1000); st.col = index % 1000; }
       else if (zone === Z.SETTINGS) st.row = index;
       else if (zone === Z.EDIT) st.edit = index;
@@ -1619,6 +1860,14 @@
     st.zone = Z.ROWS;
     st.tabFocus = 0;
     selectTab(0, true);
+    startOnFeatured();
+  }
+
+  /** As the Apple TV app opens: on the featured carousel, when there is one. */
+  function startOnFeatured() {
+    if (st.zone !== Z.ROWS || st.line !== 0 || !featured.length) return;
+    st.zone = Z.HERO;
+    updateFocus();
   }
 
   Data.onChange(function () {
@@ -1648,10 +1897,12 @@
   TV.holdScreenSaver(function () { return !sheetOpen() && (saverMode() === 'clock' || saverPhotos().length > 0); });
   fit();
   renderTabs();
+  hover($('hero').querySelector('.cta'), Z.HERO, 0);
   applyDim();
   tickClock();
   loadApps(function () {
     renderAll();
+    startOnFeatured();
     Data.refresh();
   });
   setInterval(function () {

@@ -115,7 +115,40 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .sheet { z-index: 3; }
 #saver { z-index: 4; }
 
-/* MARK: - Tab bar: a glass pill at the top center; the selected tab is lit, the focused one white. */
+/* MARK: - Liquid glass: the art behind, blurred (a tiny canvas stretched: blur without backdrop-filter, which older
+   TVs lack), more vivid, under a clear tint, with light on its rims. home.js draws each piece's canvas. */
+
+.glass { position: relative; overflow: hidden; }
+.glass > .frost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  z-index: 0;
+  pointer-events: none;
+  -webkit-filter: saturate(1.9) brightness(0.92);
+  filter: saturate(1.9) brightness(0.92);
+}
+.glass::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  border-radius: inherit;
+  background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.05) 48%, rgba(255, 255, 255, 0.1));
+  background: linear-gradient(rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.05) 48%, rgba(255, 255, 255, 0.1));
+  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 0 rgba(255, 255, 255, 0.16),
+    inset 1.5px 0 0 rgba(255, 255, 255, 0.14), inset -1.5px 0 0 rgba(255, 255, 255, 0.14), inset 0 0 18px rgba(255, 255, 255, 0.08);
+}
+.glass > * { position: relative; z-index: 2; }
+.glass > .frost { position: absolute; z-index: 0; }
+
+/* MARK: - Tab bar: a glass pill at the top center; a lens slides under the tabs and stretches as it goes, like
+   liquid: its leading edge first, the trailing one after. Clear when only selected, white when focused. */
 
 #tabbar {
   position: absolute;
@@ -124,20 +157,26 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   width: 1920px;
   text-align: center;
   z-index: 3;
-  -webkit-transition: opacity 0.3s, -webkit-transform 0.38s cubic-bezier(0.32, 0.72, 0.2, 1);
-  transition: opacity 0.3s, transform 0.38s cubic-bezier(0.32, 0.72, 0.2, 1);
+  -webkit-transition: opacity 0.3s, -webkit-transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1);
+  transition: opacity 0.3s, transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1);
 }
-.deep #tabbar { opacity: 0; -webkit-transform: translateY(-40px); transform: translateY(-40px); }
+.deep #tabbar { opacity: 0; -webkit-transform: translateY(-44px) scale(0.94); transform: translateY(-44px) scale(0.94); }
 #tabbar .pill {
   display: inline-block;
   height: 72px;
   padding: 6px;
   border-radius: 42px;
   white-space: nowrap;
-  background: -webkit-linear-gradient(top, rgba(72, 72, 78, 0.72), rgba(36, 36, 40, 0.66));
-  background: linear-gradient(rgba(72, 72, 78, 0.72), rgba(36, 36, 40, 0.66));
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  text-align: left;
+  background: rgba(40, 40, 46, 0.3);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
 }
+#tabbar .tabs { position: relative; z-index: 3; white-space: nowrap; }
+.lens { position: absolute; left: 6px; top: 6px; height: 72px; z-index: 2; opacity: 0.24; -webkit-transition: opacity 0.2s; transition: opacity 0.2s; }
+.lens i { position: absolute; left: 0; top: 0; height: 72px; background: #FFF; -webkit-transform-origin: 0 0; transform-origin: 0 0; }
+.lens .l, .lens .r { width: 72px; border-radius: 36px; }
+.lens .m { width: 1px; }
+.lens.hot { opacity: 1; }
 .tab {
   position: relative;
   display: inline-block;
@@ -148,54 +187,57 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   font-size: 29px;
   font-weight: 600;
   line-height: 72px;
-  color: rgba(255, 255, 255, 0.78);
-  -webkit-transition: -webkit-transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2), background-color 0.17s, box-shadow 0.2s, color 0.17s;
-  transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2), background-color 0.17s, box-shadow 0.2s, color 0.17s;
+  color: rgba(255, 255, 255, 0.8);
+  -webkit-transition: color 0.2s;
+  transition: color 0.2s;
 }
 .tab.icon { width: 72px; padding: 0; }
 .tab.icon .sym { position: absolute; left: 21px; top: 21px; width: 30px; height: 30px; }
-.tab.on { background: rgba(255, 255, 255, 0.2); color: #FFF; }
-.tab.focus {
-  background: #FFF;
-  color: #1D1D1F;
-  -webkit-transform: scale(1.08);
-  transform: scale(1.08);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
-}
+.tab.on { color: #FFF; }
+.tab.focus { color: #1D1D1F; }
 
-/* The time and the weather at the top right, as tvOS keeps its clock. */
+/* The time and the weather at the top right, in their own glass, as tvOS keeps its clock. */
 #status {
   position: absolute;
-  right: 92px;
-  top: 64px;
-  height: 36px;
-  font-size: 29px;
+  right: 80px;
+  top: 50px;
+  height: 60px;
+  padding: 0 26px;
+  border-radius: 30px;
+  font-size: 28px;
   font-weight: 600;
-  line-height: 36px;
-  color: rgba(255, 255, 255, 0.92);
+  line-height: 60px;
+  color: #FFF;
   white-space: nowrap;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  background: rgba(40, 40, 46, 0.3);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.3);
   -webkit-font-feature-settings: 'tnum';
   font-feature-settings: 'tnum';
   -webkit-transition: opacity 0.3s;
   transition: opacity 0.3s;
 }
-#status .wx { margin-right: 26px; color: rgba(255, 255, 255, 0.78); }
+#status .wx { margin-right: 20px; color: rgba(255, 255, 255, 0.85); }
 #status .wx .sym { width: 30px; height: 30px; vertical-align: -6px; margin-right: 10px; }
 .deep #status { opacity: 0; }
 
-/* MARK: - Hero: what the focused card is, large, over its art. */
+/* MARK: - Hero: what's featured (a carousel that turns by itself) or what the focused card is, over its art. */
 
 #hero {
   position: absolute;
   left: 96px;
-  top: 214px;
-  width: 1000px;
+  top: 190px;
+  width: 1100px;
   color: #FFF;
   -webkit-transition: opacity 0.3s, -webkit-transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1);
   transition: opacity 0.3s, transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1);
 }
 .deep #hero { opacity: 0; -webkit-transform: translateY(-80px); transform: translateY(-80px); }
+#hero .text.turn { -webkit-animation: heroin 0.55s cubic-bezier(0.22, 1, 0.36, 1); animation: heroin 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
+#hero .text.back { -webkit-animation: heroback 0.55s cubic-bezier(0.22, 1, 0.36, 1); animation: heroback 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
+@-webkit-keyframes heroin { from { opacity: 0; -webkit-transform: translateX(60px); } to { opacity: 1; -webkit-transform: none; } }
+@keyframes heroin { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: none; } }
+@-webkit-keyframes heroback { from { opacity: 0; -webkit-transform: translateX(-60px); } to { opacity: 1; -webkit-transform: none; } }
+@keyframes heroback { from { opacity: 0; transform: translateX(-60px); } to { opacity: 1; transform: none; } }
 #hero .kicker {
   font-size: 23px;
   font-weight: 700;
@@ -205,7 +247,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   white-space: nowrap;
 }
 #hero .name {
-  margin-top: 14px;
+  margin-top: 12px;
   max-height: 188px;
   overflow: hidden;
   font-size: 92px;
@@ -215,7 +257,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   text-shadow: 0 4px 30px rgba(0, 0, 0, 0.35);
 }
 #hero .info {
-  margin-top: 20px;
+  margin-top: 16px;
   font-size: 28px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.9);
@@ -236,15 +278,55 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   background: rgba(255, 255, 255, 0.88);
 }
 #hero .desc {
-  margin-top: 16px;
+  margin-top: 12px;
   max-width: 860px;
-  max-height: 108px;
+  max-height: 72px;
   overflow: hidden;
   font-size: 26px;
   font-weight: 500;
   line-height: 36px;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.72);
 }
+/* The button and the page dots: only while the featured carousel shows (not over a row's card). */
+#hero .bar { margin-top: 26px; height: 64px; white-space: nowrap; opacity: 0; -webkit-transition: opacity 0.25s; transition: opacity 0.25s; }
+#hero.featured .bar { opacity: 1; }
+#hero .cta {
+  display: inline-block;
+  vertical-align: middle;
+  height: 64px;
+  padding: 0 34px 0 28px;
+  border-radius: 32px;
+  font-size: 27px;
+  font-weight: 700;
+  line-height: 64px;
+  background: rgba(40, 40, 46, 0.25);
+  -webkit-transition: -webkit-transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.3), background-color 0.2s, color 0.2s, box-shadow 0.25s;
+  transition: transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.3), background-color 0.2s, color 0.2s, box-shadow 0.25s;
+}
+#hero .cta .sym { width: 26px; height: 26px; margin-right: 12px; vertical-align: -4px; }
+#hero .cta.focus { background: #FFF; color: #1D1D1F; -webkit-transform: scale(1.08); transform: scale(1.08); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45); }
+#hero .cta.focus::before, #hero .cta.focus > .frost { opacity: 0; }
+#hero .dots {
+  display: inline-block;
+  vertical-align: middle;
+  height: 30px;
+  margin-left: 26px;
+  padding: 0 10px;
+  border-radius: 15px;
+  background: rgba(40, 40, 46, 0.2);
+}
+#hero .dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 10px 5px 0;
+  border-radius: 5px;
+  vertical-align: top;
+  background: rgba(255, 255, 255, 0.42);
+  -webkit-transition: background-color 0.3s;
+  transition: background-color 0.3s;
+}
+#hero .dot.on { width: 28px; background: #FFF; }
 
 /* MARK: - Rows: a title and a strip of cards; the focused row's strip scrolls to keep its card in view. */
 
@@ -273,16 +355,23 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   position: absolute;
   left: 0;
   top: 54px;
-  -webkit-transition: -webkit-transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1);
-  transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1);
+  -webkit-transition: -webkit-transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .item {
   position: absolute;
   top: 0;
-  -webkit-transition: -webkit-transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
-  transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  -webkit-transition: -webkit-transform 0.38s cubic-bezier(0.2, 0.9, 0.3, 1.32);
+  transition: transform 0.38s cubic-bezier(0.2, 0.9, 0.3, 1.32);
 }
+/* The edge of a row: the focused card leans that way and comes back, as tvOS does. */
+.item.bump-r { -webkit-animation: bumpr 0.34s ease-out; animation: bumpr 0.34s ease-out; }
+.item.bump-l { -webkit-animation: bumpl 0.34s ease-out; animation: bumpl 0.34s ease-out; }
+@-webkit-keyframes bumpr { 40% { -webkit-transform: translate(14px, -8px) scale(1.1); } }
+@keyframes bumpr { 40% { transform: translate(14px, -8px) scale(1.1); } }
+@-webkit-keyframes bumpl { 40% { -webkit-transform: translate(-14px, -8px) scale(1.1); } }
+@keyframes bumpl { 40% { transform: translate(-14px, -8px) scale(1.1); } }
 .item .face {
   position: absolute;
   left: 0;
@@ -354,6 +443,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   text-overflow: ellipsis;
 }
 
+/* The TV's own icon, whole: on the card's height (its color fills the sides), or covering it (a picture). */
+.item .face img.orig { height: 100%; width: auto; max-width: none; max-height: none; }
+.item .face img.orig.cover { width: 100%; height: 100%; object-fit: cover; }
+.item .face img.orig.fit { height: 72%; }
+/* Brands whose logo isn't bundled: their name, in their style, until the TV's own icon shows. */
+.item .face .word.wm-disney { font-weight: 600; letter-spacing: -0.01em; text-shadow: 0 0 18px rgba(120, 200, 255, 0.55); }
+.item .face .word.wm-globoplay { font-weight: 800; letter-spacing: -0.03em; text-transform: lowercase; }
+
 /* A console: the logo and the name on the brand's colors, with a light from above. */
 .console .face .glow {
   position: absolute;
@@ -377,9 +474,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   font-weight: 700;
   line-height: 34px;
   letter-spacing: 0.04em;
-  color: rgba(255, 255, 255, 0.92);
-  background: rgba(0, 0, 0, 0.28);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  color: #FFF;
+  background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1));
+  background: linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 /* A pick: the title's photo, its name over a shade at the bottom. */
@@ -397,9 +495,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 /* A shortcut (an input, All Apps, Settings): frosted glass with a symbol and its name. */
 .action .face {
-  background: -webkit-linear-gradient(top, rgba(88, 88, 94, 0.62), rgba(44, 44, 48, 0.62));
-  background: linear-gradient(rgba(88, 88, 94, 0.62), rgba(44, 44, 48, 0.62));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  background: -webkit-linear-gradient(-60deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.07) 55%, rgba(255, 255, 255, 0.12));
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.07) 55%, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3), inset 0 1.5px 0 rgba(255, 255, 255, 0.5), inset 0 -1px 0 rgba(255, 255, 255, 0.14),
+    inset 1.5px 0 0 rgba(255, 255, 255, 0.12), inset -1.5px 0 0 rgba(255, 255, 255, 0.12);
 }
 .action .face .sym { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -40px 0 0 -26px; }
 .action .face .aname { position: absolute; left: 10px; right: 10px; bottom: 22px; text-align: center; font-size: 24px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -411,7 +510,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* MARK: - Sheets over the home screen: All Apps, Settings, Shelf, Language, About */
 
 .sheet {
-  background: rgba(0, 0, 0, 0.66);
+  background: rgba(0, 0, 0, 0.5);
   color: #FFF;
   opacity: 0;
   visibility: hidden;
@@ -453,9 +552,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   border-radius: 40px;
   padding: 30px 30px 26px;
   box-sizing: border-box;
-  background: -webkit-linear-gradient(top, rgba(34, 36, 44, 0.96), rgba(18, 20, 26, 0.97));
-  background: linear-gradient(rgba(34, 36, 44, 0.96), rgba(18, 20, 26, 0.97));
-  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  background: rgba(22, 22, 26, 0.5);
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.6);
+}
+/* The sheets' glass is darker: a long list reads on it whatever the art is. */
+.box.glass::before {
+  background: -webkit-linear-gradient(top, rgba(28, 28, 32, 0.62), rgba(14, 14, 16, 0.74));
+  background: linear-gradient(rgba(28, 28, 32, 0.62), rgba(14, 14, 16, 0.74));
 }
 .box .title { font-size: 38px; font-weight: 700; padding: 6px 18px 18px; letter-spacing: -0.01em; }
 .box .title .sym { width: 36px; height: 36px; vertical-align: -5px; margin-right: 14px; color: rgba(255, 255, 255, 0.85); }
@@ -563,4 +667,5 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 * { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 
 /* Tizen 2 and 1 GB TVs (see tv.js): no shadows or animations; their GPUs can't keep up while the focus moves. */
-.lite * { box-shadow: none !important; -webkit-transition: none !important; transition: none !important; }
+.lite * { box-shadow: none !important; -webkit-transition: none !important; transition: none !important; -webkit-animation: none !important; animation: none !important; }
+.lite .frost { -webkit-filter: none; filter: none; }

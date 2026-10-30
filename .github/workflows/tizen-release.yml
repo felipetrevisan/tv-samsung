@@ -1,0 +1,32 @@
+# Publishes the Samsung package as this fork's latest GitHub release, which is what TizenBrew Installer installs when
+# you type felipetrevisan/tv-samsung. Built with --generic (no config.properties: the TMDB key is typed on the TV, the
+# city comes from its time zone) and not signed: on 2023 and newer TVs TizenBrew signs it with your Samsung account.
+name: Samsung release
+
+on:
+  push:
+    branches: [main, apple-tv-style]
+    paths: ["web/**", "tizen/**", "tools/webapp.py", "app/assets/**", ".github/workflows/tizen-release.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tizen-release
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 tizen/build.py --generic
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="atv-$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          gh release create "$tag" FreeMyTV-tizen.wgt --target "$GITHUB_SHA" --latest \
+            --title "Free My TV, Apple TV style ($tag)" \
+            --notes "Built from ${GITHUB_REF_NAME} at ${GITHUB_SHA::7}. Install with TizenBrew Installer: felipetrevisan/tv-samsung."
