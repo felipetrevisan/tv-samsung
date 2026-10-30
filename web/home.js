@@ -414,7 +414,7 @@
   // MARK: - Focus
 
   var Z = {TABS: 'tabs', HERO: 'hero', ROWS: 'rows', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', CITY: 'city', KEY: 'key', ABOUT: 'about'};
-  var st = {zone: Z.ROWS, tab: 0, tabFocus: 0, page: 0, line: 0, col: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0};
+  var st = {zone: Z.ROWS, tab: 0, tabFocus: 0, page: 0, line: 0, col: 0, about: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0};
 
   function isSheet(zone) { return zone === Z.SETTINGS || zone === Z.EDIT || zone === Z.LANG || zone === Z.CITY || zone === Z.KEY || zone === Z.ABOUT; }
   function sheetOpen() { return isSheet(st.zone); }
@@ -444,6 +444,7 @@
     if (langHint) langHint.textContent = (st.lang + 1) + ' / ' + languageChoices().length + '  ·  ' + tr('OK picks, Back cancels.');
     focusRows($('citypick'), st.city, st.zone === Z.CITY);
     focusRows($('keypick'), st.key, st.zone === Z.KEY);
+    focusRows($('about'), st.about, st.zone === Z.ABOUT);
     if (sheetOpen()) frostSheets();
   }
 
@@ -1605,8 +1606,11 @@
 
   // MARK: - About this TV: what to quote when reporting a problem, without LG's or Samsung's slow menus
 
+  var aboutInfo = null;
+
   function renderAbout(info) {
     var box = $('about').firstChild;
+    aboutInfo = info;
     box.innerHTML = '';
     el('div', 'title', box, tr('About this TV'));
     var list = el('div', 'list', box), holder = el('div', 'rows', list);
@@ -1616,16 +1620,26 @@
       // How this TV draws the page: what decides the lite mode (tv.js), to quote when it's slow.
       [L('Tela', 'Screen'), window.innerWidth + '×' + window.innerHeight + ' @' + (window.devicePixelRatio || 1) + 'x'],
       [L('Memória', 'Memory'), navigator.deviceMemory ? navigator.deviceMemory + ' GB' : '—'],
+      // Where the picks and the games stand, to tell what's wrong when they don't show.
+      [L('Destaques (TMDB)', 'Picks (TMDB)'), !Data.hasKey() ? L('Sem chave', 'No key') : Data.recsBusy() ? L('Carregando…', 'Loading…')
+        : Data.recsError() ? L('Erro: ', 'Error: ') + Data.recsError() : Data.showcase().length + L(' títulos', ' titles')],
+      [L('Jogos (RAWG)', 'Games (RAWG)'), !Prefs.rawgKey() ? L('Sem chave', 'No key') : Data.gamesBusy() ? L('Carregando…', 'Loading…')
+        : Data.gamesError() && !Data.gamesCount() ? L('Erro: ', 'Error: ') + Data.gamesError() : Data.gamesCount() + L(' jogos', ' games')],
       [L('Dados de jogos', 'Game data'), 'RAWG.io'],
       [L('Modo leve', 'Lite mode'), /\bstill\b/.test(document.documentElement.className) ? L('Sem animações', 'No animations')
         : lite ? L('Ligado', 'On') : L('Desligado', 'Off')]
     ];
+    list.style.height = Math.min(rows.length, 7) * 78 + 'px';   // ↑ ↓ scroll it, as the other lists
+    aboutRows = rows.length;
     for (var i = 0; i < rows.length; i++) {
       var row = el('div', 'row', holder), label = el('span', '', row, rows[i][0]);
       fitValue(row, label, el('span', 'value', row, info ? rows[i][1] || tr('Unavailable') : '…'));
     }
     el('div', 'hint', box, tr('Back closes.'));
+    updateFocus();
   }
+
+  var aboutRows = 0;
 
   /** A long value (Samsung's firmware) gets smaller instead of running over its label, and ends in "…" if even the smallest size is too wide. */
   function fitValue(row, label, value) {
@@ -1637,6 +1651,7 @@
   function openAbout() {
     setClass($('settings'), 'open', false);
     st.zone = Z.ABOUT;
+    st.about = 0;
     renderAbout(null);
     setClass($('about'), 'open', true);
     updateFocus();
@@ -1815,6 +1830,9 @@
         break;
       case Z.KEY:
         if (dy) st.key = Math.max(0, Math.min(keyRows() - 1, st.key + dy));
+        break;
+      case Z.ABOUT:
+        if (dy) st.about = Math.max(0, Math.min(aboutRows - 1, st.about + dy));
         break;
     }
     updateFocus();
@@ -2111,6 +2129,7 @@
   Data.onChange(function () {
     refreshRows();
     renderStatus();
+    if (st.zone === Z.ABOUT && aboutInfo) renderAbout(aboutInfo);   // the picks or the games came while it shows
   });
 
   function reopened() {

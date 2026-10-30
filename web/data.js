@@ -243,7 +243,7 @@ var Data = (function () {
   var GKEY = Prefs.rawgKey();
   var gcache = stored('games') || {};
   var games = gcache.byConsole || {}, gamesAt = gcache.at || 0, gamesKey = gcache.key || '';
-  var fetchingGames = false, gamesFailedAt = 0, movies = {};
+  var fetchingGames = false, gamesFailedAt = 0, gamesError = '', movies = {};
 
   function rawg(path, done, key) {
     key = key || GKEY;
@@ -289,7 +289,8 @@ var Data = (function () {
     function finish() {
       if (--left) return;
       fetchingGames = false;
-      if (!got.ps5 && !got.xbox && !got['switch']) { gamesFailedAt = Date.now(); return; }
+      if (!got.ps5 && !got.xbox && !got['switch']) { gamesFailedAt = Date.now(); changed(); return; }
+      gamesError = '';
       games = got;
       gamesAt = Date.now();
       gamesKey = GKEY.slice(-6);
@@ -300,6 +301,7 @@ var Data = (function () {
       left++;
       loadGames(platform, function (err, list) {
         if (!err) got[key] = list;
+        else gamesError = err.message;
         finish();
       });
     }
@@ -664,6 +666,11 @@ var Data = (function () {
     /** A key typed (or removed) on the TV: the picks come again with it, or go. */
     keyChanged: function () { KEY = Prefs.tmdbKey(); recsError = ''; failedAt = 0; refreshRecs(); changed(); },
     recsError: function () { return recsError; },
+    /** For About this TV: where the picks and the games stand ('' when fine). */
+    recsBusy: function () { return fetchingRecs; },
+    gamesBusy: function () { return fetchingGames; },
+    gamesError: function () { return gamesError; },
+    gamesCount: function () { var n = 0; for (var k in games) if (games.hasOwnProperty(k)) n += games[k].length; return n; },
     picks: now,
     showcase: all,
     image: function (path, size) { return path ? 'https://image.tmdb.org/t/p/' + (size || 'w1280') + path : ''; },

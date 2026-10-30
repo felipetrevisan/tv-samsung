@@ -295,7 +295,8 @@ var TV = (function () {
     // The app's own icon from Smart Hub comes first (the original, as the TV shows it); our bundled logo is what's
     // left when it doesn't load (Tizen 3 loads none) or is the platform's generic one (samsungApps finds those).
     var logo = SAMSUNG_ICONS[a.id] || byName || '';
-    var original = tizen3 ? '' : icon;
+    // YouTube's and Prime Video's own icons are a placeholder on Tizen 4 and 5 (a 2020 Q70T showed none): our logo.
+    var original = tizen3 || /^(youtube|primevideo|amazonprimevideo)$/.test(key) ? '' : icon;
     var dial = key === 'netflix' ? 'Netflix' : key === 'youtube' ? 'YouTube' : /^(amazon)?primevideo$/.test(key) ? 'Amazon' : '';
     if (dial) samsungDial[a.id] = dial;
     return {id: a.id, title: title, icon: original || logo, logo: logo, original: !!original, color: ''};
