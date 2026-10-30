@@ -1,6 +1,13 @@
 # Publishes the Samsung package as this fork's latest GitHub release, which is what TizenBrew Installer installs when
 # you type felipetrevisan/tv-samsung. Built with --generic (no config.properties: the TMDB key is typed on the TV, the
-# city comes from its time zone) and not signed: on 2023 and newer TVs TizenBrew signs it with your Samsung account.
+# city comes from its time zone) and signed with a Tizen certificate, which TizenBrew installs as it is on 2017-2022
+# TVs (Tizen 3 to 6.5; unsigned, those fail with 118 / -16 "Application directory error"); on 2023 and newer TVs
+# TizenBrew signs it again with your Samsung account.
+#
+# The author certificate has to stay the same between releases, or the TV refuses the update (uninstall first). Set
+# the secrets TIZEN_AUTHOR_P12 (the .p12, base64) and TIZEN_AUTHOR_PASSWORD to use yours; without them a certificate
+# made by the first run is kept in this repository's Actions cache (private to it; GitHub drops a cache unused for
+# 7 days, and then the next release comes with a new one).
 name: Samsung release
 
 on:
@@ -22,6 +29,39 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: python3 tizen/build.py --generic
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      # tizen.js signs packages without Tizen Studio: the same signer TizenBrew Installer uses, pinned to a commit.
+      - name: tizen.js
+        run: npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/tizenjs" "github:reisxd/tizen.js#45b00106149d0c8eff74ead4a979c909dd80efd6"
+      - name: Author certificate kept between runs
+        uses: actions/cache@v4
+        with:
+          path: ~/.tv-home-author
+          key: tizen-author-v1
+      - name: Sign
+        env:
+          AUTHOR_P12: ${{ secrets.TIZEN_AUTHOR_P12 }}
+          AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
+        run: |
+          tizenjs="$RUNNER_TEMP/tizenjs/node_modules/tizen/cli.js"
+          if [ -n "$AUTHOR_P12" ]; then
+            cert="$RUNNER_TEMP/author.p12"
+            printf '%s' "$AUTHOR_P12" | base64 -d > "$cert"
+            pass="$AUTHOR_PASSWORD"
+          else
+            mkdir -p ~/.tv-home-author
+            cert=~/.tv-home-author/author.p12
+            pass=tv-home-author
+            if [ ! -f "$cert" ]; then
+              node "$tizenjs" create-tizen-cert --name "TV Home" --password "$pass" --privilege public --output "$cert"
+            fi
+          fi
+          node "$tizenjs" build FreeMyTV-tizen.wgt -t wgt -o signed.wgt --author "$cert" --authorPwd "$pass" -p public
+          mv signed.wgt FreeMyTV-tizen.wgt
+          # Both signatures in, or no release.
+          test "$(unzip -l FreeMyTV-tizen.wgt | grep -cE ' (author-signature|signature1)\.xml$')" = 2
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
