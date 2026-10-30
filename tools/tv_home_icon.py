@@ -59,5 +59,15 @@ img = bg.convert('RGBA')
 img = Image.alpha_composite(img, Image.merge('RGBA', [Image.new('L', (S, S), 0)] * 3 + [sh]))
 img = Image.alpha_composite(img, layer)
 
-img.resize((512, 512), Image.LANCZOS).save(out, optimize=True)
+# The shape of Free My TV's icon, which the TV lists: the full square with round corners (radius 120 of 512), clear
+# outside. An icon opaque to its corners never showed in the app list (1.4).
+mask = Image.new('L', (S, S), 0)
+ImageDraw.Draw(mask).rounded_rectangle([0, 0, S - 1, S - 1], radius=480, fill=255)
+img.putalpha(mask)
+img = img.resize((512, 512), Image.LANCZOS)
+# 256 colors, dithered (no bands in the aurora): about 50 KB, lighter than Free My TV's 67 KB; still RGBA, as it is.
+alpha = img.getchannel('A')
+img = img.convert('RGB').convert('P', palette=Image.ADAPTIVE, colors=256, dither=Image.FLOYDSTEINBERG).convert('RGBA')
+img.putalpha(alpha)
+img.save(out, optimize=True)
 print('wrote', out)
