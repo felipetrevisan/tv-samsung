@@ -331,6 +331,10 @@
     img.onerror = function () { box.innerHTML = ''; brandFace(app, box, wordSize, app.logo); };
     img.onload = function () {
       img.onload = null;
+      // Too small for the card at the TV's real pixels (Smart Hub's are often 250 px; a 2x TV draws a 240 px card at
+      // 480): stretched, it blurs. Our sharp logo instead, where there is one.
+      var need = box.offsetHeight * (window.devicePixelRatio || 1) * 0.75, logo = (k && LOGOS[k[0]]) || app.logo;
+      if (logo && img.naturalHeight && img.naturalHeight < need) { box.innerHTML = ''; brandFace(app, box, wordSize, logo); return; }
       if (!edges[url]) edges[url] = edgeOf(img);
       var e = edges[url];
       if (e.kind === 'solid') box.style.background = 'rgb(' + e.bg.join(',') + ')';
@@ -357,6 +361,15 @@
       var img = el('img', '', box);
       word.style.visibility = 'hidden';
       img.onerror = function () { if (img.parentNode) img.parentNode.removeChild(img); word.style.visibility = ''; };
+      // Our own logos (web/icons) are already white on clear, and SVGs or 520 px wide: shown as they are, sharp at any
+      // size. Lifting copies them into a 240 px canvas, which blurs on a TV that draws the page at twice its size.
+      if (/^icons\//.test(url)) {
+        img.className = 'logo';
+        img.onload = function () { img.onload = null; fitLogo(img); };
+        img.src = url;
+        if (img.complete) fitLogo(img);
+        return;
+      }
       if (lifted[url]) { showLogo(img, box, top, bottom, lifted[url], !k); return; }
       if (lifted[url] !== false) {
         img.onload = function () {
@@ -1047,7 +1060,9 @@
       m.onload = function () {
         var c = document.createElement('canvas');
         c.width = c.height = 520;   // the size it's drawn at on the full-size art
-        try { c.getContext('2d').drawImage(m, 0, 0, 520, 520); } catch (e) {}
+        // in its own proportions, centered (a wide wordmark, YouTube's or Max's, was squashed into the square)
+        var nw = m.naturalWidth || 520, nh = m.naturalHeight || 520, s = Math.min(520 / nw, 520 / nh);
+        try { c.getContext('2d').drawImage(m, (520 - nw * s) / 2, (520 - nh * s) / 2, nw * s, nh * s); } catch (e) {}
         c.complete = true;
         marks[art.logo] = c;
         draw(null, c);

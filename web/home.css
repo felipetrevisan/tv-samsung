@@ -453,7 +453,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 
 /* The TV's own icon, whole: on the card's height (its color fills the sides), or covering it (a picture). */
-.item .face img.orig { height: 100%; width: auto; max-width: none; max-height: none; }
+.item .face img.orig { height: 82%; width: auto; max-width: 92%; max-height: none; }   /* its padding stays: the logo not too big */
 .item .face img.orig.cover { width: 100%; height: 100%; object-fit: cover; }
 .item .face img.orig.fit { height: 72%; }
 /* Brands whose logo isn't bundled: their name, in their style, until the TV's own icon shows. */
