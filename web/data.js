@@ -100,6 +100,8 @@ var Prefs = (function () {
       if (off) list.push(key);
       this.set('servicesOff', list);
     },
+    /** Any other setting, by name (the consoles' HDMI ports). */
+    get: function (name, fallback) { return pick(name, fallback); },
     set: function (name, value) { v[name] = value; save(); this.version++; },
     setCoin: function (i, on) {
       var c = (pick('coins', null) || [true, true, true, true]).slice();
