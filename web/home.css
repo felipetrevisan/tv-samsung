@@ -123,12 +123,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   position: absolute;
   left: 0;
   top: 0;
-  width: 1920px;
-  height: 1080px;
+  width: 100%;
+  height: 100%;
   z-index: 0;
+  border-radius: inherit;
   pointer-events: none;
-  -webkit-filter: saturate(1.9) brightness(0.92);
-  filter: saturate(1.9) brightness(0.92);
 }
 .glass::before {
   content: '';
@@ -147,8 +146,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .glass > * { position: relative; z-index: 2; }
 .glass > .frost { position: absolute; z-index: 0; }
 
-/* MARK: - Tab bar: a glass pill at the top center; a lens slides under the tabs and stretches as it goes, like
-   liquid: its leading edge first, the trailing one after. Clear when only selected, white when focused. */
+/* MARK: - Tab bar: a glass pill at the top center. The focused tab turns white at once and grows with a spring;
+   while the focus is elsewhere, a clear lens marks the selected tab, sliding and stretching like a drop. */
 
 #tabbar {
   position: absolute;
@@ -169,14 +168,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   white-space: nowrap;
   text-align: left;
   background: rgba(40, 40, 46, 0.3);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.3);
 }
 #tabbar .tabs { position: relative; z-index: 3; white-space: nowrap; }
 .lens { position: absolute; left: 6px; top: 6px; height: 72px; z-index: 2; opacity: 0.24; -webkit-transition: opacity 0.2s; transition: opacity 0.2s; }
 .lens i { position: absolute; left: 0; top: 0; height: 72px; background: #FFF; -webkit-transform-origin: 0 0; transform-origin: 0 0; }
 .lens .l, .lens .r { width: 72px; border-radius: 36px; }
 .lens .m { width: 1px; }
-.lens.hot { opacity: 1; }
+.lens.hide { opacity: 0; }
 .tab {
   position: relative;
   display: inline-block;
@@ -188,13 +187,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   font-weight: 600;
   line-height: 72px;
   color: rgba(255, 255, 255, 0.8);
-  -webkit-transition: color 0.2s;
-  transition: color 0.2s;
+  -webkit-transition: -webkit-transform 0.45s cubic-bezier(0.34, 1.6, 0.5, 1);
+  transition: transform 0.45s cubic-bezier(0.34, 1.6, 0.5, 1);
 }
 .tab.icon { width: 72px; padding: 0; }
 .tab.icon .sym { position: absolute; left: 21px; top: 21px; width: 30px; height: 30px; }
 .tab.on { color: #FFF; }
-.tab.focus { color: #1D1D1F; }
+.tab.focus { color: #1D1D1F; background: #FFF; -webkit-transform: scale(1.12); transform: scale(1.12); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35); }
 
 /* The time and the weather at the top right, in their own glass, as tvOS keeps its clock. */
 #status {
@@ -210,7 +209,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   color: #FFF;
   white-space: nowrap;
   background: rgba(40, 40, 46, 0.3);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
   -webkit-font-feature-settings: 'tnum';
   font-feature-settings: 'tnum';
   -webkit-transition: opacity 0.3s;
@@ -254,7 +253,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.02;
-  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.35);
 }
 #hero .info {
   margin-top: 16px;
@@ -300,11 +298,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   font-weight: 700;
   line-height: 64px;
   background: rgba(40, 40, 46, 0.25);
-  -webkit-transition: -webkit-transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.3), background-color 0.2s, color 0.2s, box-shadow 0.25s;
-  transition: transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.3), background-color 0.2s, color 0.2s, box-shadow 0.25s;
+  -webkit-transition: -webkit-transform 0.45s cubic-bezier(0.34, 1.6, 0.5, 1);
+  transition: transform 0.45s cubic-bezier(0.34, 1.6, 0.5, 1);
 }
 #hero .cta .sym { width: 26px; height: 26px; margin-right: 12px; vertical-align: -4px; }
-#hero .cta.focus { background: #FFF; color: #1D1D1F; -webkit-transform: scale(1.08); transform: scale(1.08); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45); }
+#hero .cta.focus { background: #FFF; color: #1D1D1F; -webkit-transform: scale(1.1); transform: scale(1.1); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4); }
 #hero .cta.focus::before, #hero .cta.focus > .frost { opacity: 0; }
 #hero .dots {
   display: inline-block;
@@ -349,7 +347,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   letter-spacing: 0.005em;
   color: rgba(255, 255, 255, 0.92);
   white-space: nowrap;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
 }
 .line .strip {
   position: absolute;
@@ -383,9 +381,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   background-color: #1C1C1E;
   background-size: cover;
   background-position: center;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  -webkit-transition: box-shadow 0.22s;
-  transition: box-shadow 0.22s;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
 }
 /* The glare of tvOS's focused cards: a soft light from the top left and a bright rim. */
 .item .face::after {
@@ -404,7 +400,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   transition: opacity 0.17s;
 }
 .item.focus { -webkit-transform: translateY(-8px) scale(1.1); transform: translateY(-8px) scale(1.1); z-index: 2; }
-.item.focus .face { box-shadow: 0 34px 60px rgba(0, 0, 0, 0.7); }
+.item.focus .face { box-shadow: 0 18px 30px rgba(0, 0, 0, 0.6); }
 .item.focus .face::after { opacity: 1; }
 .item .label {
   position: absolute;

@@ -31,24 +31,6 @@
     return s;
   }
 
-  function coin(i, parent) {
-    var c = window.COINS && window.COINS[i];
-    if (!c) return;
-    var ns = 'http://www.w3.org/2000/svg';
-    var svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('viewBox', '0 0 32 32');
-    // Old WebKit (Tizen 2) draws an SVG without them at 300×150; the CSS still sets the size everywhere it's shown.
-    svg.setAttribute('width', '15');
-    svg.setAttribute('height', '15');
-    for (var k = 0; k < c.length; k++) {
-      var p = document.createElementNS(ns, 'path');
-      p.setAttribute('d', c[k]);
-      p.setAttribute('fill-rule', 'evenodd');
-      svg.appendChild(p);
-    }
-    parent.appendChild(svg);
-  }
-
   function hasClass(e, c) { return (' ' + e.className + ' ').indexOf(' ' + c + ' ') >= 0; }
   function setClass(e, c, on) {
     if (!e) return;
@@ -461,7 +443,7 @@
     if (langHint) langHint.textContent = (st.lang + 1) + ' / ' + languageChoices().length + '  ·  ' + tr('OK picks, Back cancels.');
     focusRows($('citypick'), st.city, st.zone === Z.CITY);
     focusRows($('keypick'), st.key, st.zone === Z.KEY);
-    frostAll();
+    if (sheetOpen()) frostSheets();
   }
 
   function focusRows(sheet, index, on) {
@@ -494,19 +476,20 @@
     lensAt = null;
   }
 
-  var lensAt = null;
+  var lensAt = null, lensW = 0;
 
   /**
-   * The lens under the selected (or focused) tab: two round caps and a middle that stretches between them. Going
-   * right, the right cap leads and the left one follows later, so the lens stretches and settles like a drop.
+   * The clear lens under the selected tab, while the focus is elsewhere (on the bar, the focused tab is white): two
+   * round caps and a middle that stretches between them. Going right, the right cap leads and the left one follows
+   * later, so the lens stretches and settles like a drop.
    */
   function placeLens() {
-    var tab = tabsBox().children[st.zone === Z.TABS ? st.tabFocus : st.tab];
+    var tab = tabsBox().children[st.tab];
     var lens = $('tabbar').querySelector('.lens');
     if (!tab || !lens) return;
+    setClass(lens, 'hide', st.zone === Z.TABS);
     var x = tab.offsetLeft, w = tab.offsetWidth, parts = lens.children;
-    setClass(lens, 'hot', st.zone === Z.TABS);
-    if (x === lensAt && parts[1].style.width === w + 'px') return;
+    if (x === lensAt && w === lensW) return;
     var first = lensAt === null, right = x >= lensAt;
     var lead = first ? '0s' : '0.32s', mid = first ? '0s' : '0.42s', tail = first ? '0s' : '0.54s';
     var curve = ' cubic-bezier(0.3, 1.25, 0.4, 1)';
@@ -520,12 +503,32 @@
     parts[0].style.webkitTransform = parts[0].style.transform = 'translateX(' + x + 'px)';
     parts[1].style.webkitTransform = parts[1].style.transform = 'translateX(' + (x + cap / 2) + 'px) scaleX(' + Math.max(1, w - cap) + ')';
     parts[2].style.webkitTransform = parts[2].style.transform = 'translateX(' + (x + w - cap) + 'px)';
-    parts[1].style.width = '1px';
     lensAt = x;
+    lensW = w;
+  }
+
+  var tabTimer = 0, TAB_REST_MS = 220;
+
+  /**
+   * Focusing a tab shows it once the focus rests there: a run along the bar doesn't build every tab's rows on the way
+   * (that's what made it stutter). Anything that needs the tab now (↓, OK) calls selectTabNow first.
+   */
+  function selectTabSoon(i) {
+    clearTimeout(tabTimer);
+    tabTimer = setTimeout(function () { tabTimer = 0; selectTab(i); }, TAB_REST_MS);
+  }
+
+  function selectTabNow() {
+    if (!tabTimer) return;
+    clearTimeout(tabTimer);
+    tabTimer = 0;
+    if (st.tabFocus < TABS.length) selectTab(st.tabFocus);
   }
 
   /** As on Apple TV, focusing a tab shows it: its rows at once, from the start. */
   function selectTab(i, force) {
+    clearTimeout(tabTimer);
+    tabTimer = 0;
     if (i === st.tab && !force) return;
     st.tab = i;
     st.line = 0;
@@ -560,7 +563,7 @@
       add(L('Música', 'Music'), 'app', musicApps().map(appItem));
       add(L('Atalhos', 'Shortcuts'), 'action', shortcuts());
     } else if (tab === 'games') {
-      add(L('Consoles · via receiver', 'Consoles · through the receiver'), 'consolebig', CONSOLES.map(consoleItem));
+      add('Consoles', 'consolebig', CONSOLES.map(consoleItem));
       add(L('Jogos na nuvem', 'Cloud gaming'), 'app', apps.filter(isGame).map(appItem));
       add(L('Entradas', 'Inputs'), 'action', inputItems());
     } else if (tab === 'streaming') {
@@ -695,10 +698,7 @@
       },
       hero: function () {
         var n = consoleHdmi(c);
-        return {kicker: c.maker + ' · ' + L('Console', 'Console'), name: c.name,
-          badge: 'HDMI ' + n, info: L('pelo receiver', 'through the receiver'),
-          desc: L('OK põe a TV na entrada do receiver. Ligue o console pelo controle: com HDMI-CEC o receiver troca sozinho.',
-            'OK switches the TV to the receiver. Turn the console on with its controller: with HDMI-CEC the receiver follows.'),
+        return {kicker: c.maker + ' · ' + L('Console', 'Console'), name: c.name, badge: 'HDMI ' + n,
           art: {colors: c.art, logo: c.logo}};
       },
       run: function () { playConsole(c); }
@@ -772,7 +772,7 @@
     var n = consoleHdmi(c), input = null;
     for (var i = 0; i < inputs.length; i++) if (inputs[i].key === 'hdmi' + n) input = inputs[i];
     if (!input) { toast(L('Esta TV não tem HDMI ' + n + '.', 'This TV has no HDMI ' + n + '.')); return; }
-    toast(L(c.name + ' · HDMI ' + n + ' (receiver)', c.name + ' · HDMI ' + n + ' (receiver)'));
+    toast(c.name + ' · HDMI ' + n);
     launcher(input.id, c.name)();
   }
 
@@ -815,6 +815,7 @@
       var go = cta.querySelector('.go'), icon = cta.querySelector('.sym');
       go.textContent = it.go || L('Abrir', 'Open');
       icon.style.webkitMaskImage = icon.style.maskImage = 'url(symbols/play.png)';
+      if (feat) frostAll();   // the button and the dots moved with the text's height
       if (heroDir) {   // the carousel turned: the text slides in from the side it came from
         setClass(text, 'turn', false);
         setClass(text, 'back', false);
@@ -851,9 +852,10 @@
   // MARK: - Liquid glass: the art behind each glass piece, blurred
 
   // The art, drawn tiny: stretched back to the screen's size it is as soft as a heavy blur, and cheap on any TV.
+  var FW = 96, FH = 54, frostGen = 0;
   var frostSrc = document.createElement('canvas');
-  frostSrc.width = 64;
-  frostSrc.height = 36;
+  frostSrc.width = FW;
+  frostSrc.height = FH;
 
   /** Where a node is on the 1920 × 1080 stage (the stage may be scaled to the window). */
   function stageXY(node) {
@@ -861,44 +863,60 @@
     return {x: (r.left - s.left) / k, y: (r.top - s.top) / k};
   }
 
+  /**
+   * One glass piece: a canvas of about a 24th of its size holding the part of the art behind it, stretched over the
+   * piece (small layers: a screen-sized one per piece was too much for a TV's GPU). Drawn again only when the art or
+   * the piece's place changed.
+   */
   function frostInto(node) {
-    var c = node.firstChild;
+    var w = node.offsetWidth, h = node.offsetHeight;
+    if (!w || !h) return;
+    var p = stageXY(node), c = node.firstChild;
+    var stamp = frostGen + ':' + Math.round(p.x) + ',' + Math.round(p.y) + ':' + w + 'x' + h;
+    if (c && c.className === 'frost' && node.getAttribute('data-frost') === stamp) return;
+    node.setAttribute('data-frost', stamp);
     if (!c || c.className !== 'frost') {
       c = document.createElement('canvas');
       c.className = 'frost';
-      c.width = 64;
-      c.height = 36;
       node.insertBefore(c, node.firstChild);
     }
-    var p = stageXY(node);
-    c.style.left = Math.round(-p.x) + 'px';
-    c.style.top = Math.round(-p.y) + 'px';
-    var g = c.getContext('2d');
-    g.clearRect(0, 0, 64, 36);
-    g.drawImage(frostSrc, 0, 0);
+    var cw = Math.max(2, Math.ceil(w / 24)), ch = Math.max(2, Math.ceil(h / 24));
+    if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; }
+    var sw = Math.min(FW, w / 1920 * FW), sh = Math.min(FH, h / 1080 * FH);
+    var sx = Math.max(0, Math.min(FW - sw, p.x / 1920 * FW)), sy = Math.max(0, Math.min(FH - sh, p.y / 1080 * FH));
+    try { c.getContext('2d').drawImage(frostSrc, sx, sy, sw, sh, 0, 0, cw, ch); } catch (e) {}
   }
 
   function frostAll() {
     var nodes = [$('tabbar').querySelector('.pill'), $('status'), $('hero').querySelector('.cta'), $('hero').querySelector('.dots')];
-    var boxes = document.querySelectorAll('.sheet.open .box');
-    for (var b = 0; b < boxes.length; b++) { setClass(boxes[b], 'glass', true); nodes.push(boxes[b]); }
     for (var i = 0; i < nodes.length; i++) if (nodes[i]) frostInto(nodes[i]);
+    frostSheets();
+  }
+
+  /** The open sheet's box (built again on each change of its rows, so its canvas comes back here). */
+  function frostSheets() {
+    var boxes = document.querySelectorAll('.sheet.open .box');
+    for (var b = 0; b < boxes.length; b++) { setClass(boxes[b], 'glass', true); frostInto(boxes[b]); }
   }
 
   /** The glass takes the new art: a photo, or the brand's colors as the art draws them. */
   function frostArt(art, img) {
     var g = frostSrc.getContext('2d');
+    // Glass shows what's behind it more vivid: done once here (a CSS filter on each piece cost every frame).
+    if ('filter' in g) g.filter = 'saturate(1.8) brightness(0.92)';
     if (img) {
-      try { g.drawImage(img, 0, 0, 64, 36); } catch (e) {}
+      try { g.drawImage(img, 0, 0, FW, FH); } catch (e) {}
     } else {
-      var cx = 0.74 * 64, cy = 0.26 * 36, r = Math.sqrt(cx * cx + (36 - cy) * (36 - cy));
+      var cx = 0.74 * FW, cy = 0.26 * FH, r = Math.sqrt(cx * cx + (FH - cy) * (FH - cy));
       var grad = g.createRadialGradient(cx, cy, 0, cx, cy, r);
       grad.addColorStop(0, art.colors[0]);
       grad.addColorStop(0.62, art.colors[1]);
       grad.addColorStop(1, '#000');
       g.fillStyle = grad;
-      g.fillRect(0, 0, 64, 36);
+      g.fillRect(0, 0, FW, FH);
     }
+    if ('filter' in g) g.filter = 'none';
+    frostGen++;
     frostAll();
   }
 
@@ -1014,14 +1032,6 @@
       {label: tr('City'), value: Prefs.city() || '—', opens: true, city: true,
         step: function (d) { if (d >= 0) openCities(); }}
     );
-    var names = ['Bitcoin', 'Ethereum', 'Solana', tr('Dollar')];
-    var count = Data.currency === 'BRL' ? 4 : 3;
-    for (var i = 0; i < count; i++) {
-      (function (i) {
-        rows.push({label: names[i], toggle: Prefs.quotes() && Prefs.coin(i), dim: !Prefs.quotes(),
-          step: function () { if (Prefs.quotes()) { Prefs.setCoin(i, !Prefs.coin(i)); Data.settingsChanged(); } }});
-      })(i);
-    }
     rows.push({label: tr('TMDB key'), value: Prefs.tmdbKey().length >= 4 ? '•••• ' + Prefs.tmdbKey().slice(-4) : tr('Not set'), opens: true, tmdb: true,
       step: function (d) { if (d >= 0) openKey(); }});
     var sv = Data.services();
@@ -1497,6 +1507,7 @@
   function activate() {
     switch (st.zone) {
       case Z.TABS:
+        selectTabNow();
         if (st.tabFocus === TABS.length) openSettings();
         else if (featured.length) { st.zone = Z.HERO; updateFocus(); }
         else if (lines.length) { st.zone = Z.ROWS; st.line = 0; updateFocus(); }
@@ -1534,8 +1545,10 @@
       case Z.TABS:
         if (dx) {
           st.tabFocus = Math.max(0, Math.min(TABS.length, st.tabFocus + dx));
-          if (st.tabFocus < TABS.length) selectTab(st.tabFocus);
-        } else if (dy > 0 && st.tabFocus < TABS.length && featured.length) {
+          if (st.tabFocus < TABS.length) selectTabSoon(st.tabFocus);
+          else { clearTimeout(tabTimer); tabTimer = 0; }   // on the gear: the tab shown stays
+        } else if (dy > 0) selectTabNow();
+        if (dy > 0 && st.tabFocus < TABS.length && featured.length) {
           st.zone = Z.HERO;
         } else if (dy > 0 && lines.length) {
           st.zone = Z.ROWS;
@@ -1622,7 +1635,7 @@
     node.onmouseover = function () {
       if (saverOn || sheetOpen() !== isSheet(zone)) return;
       st.zone = zone;
-      if (zone === Z.TABS) { st.tabFocus = index; if (index < TABS.length) selectTab(index); }
+      if (zone === Z.TABS) { st.tabFocus = index; if (index < TABS.length) selectTabSoon(index); }
       else if (zone === Z.HERO && !featured.length) return;
       else if (zone === Z.ROWS) { st.line = Math.floor(index / 1000); st.col = index % 1000; }
       else if (zone === Z.SETTINGS) st.row = index;
@@ -1892,7 +1905,6 @@
   });
 
   I18N.set(Prefs.language());
-  if (Prefs.quotes()) Prefs.set('quotes', false);   // no prices on this screen: don't fetch them
   // LG's screensaver waits only when ours will show: not under a sheet (ours waits there), and not without photos.
   TV.holdScreenSaver(function () { return !sheetOpen() && (saverMode() === 'clock' || saverPhotos().length > 0); });
   fit();
