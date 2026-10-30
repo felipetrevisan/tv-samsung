@@ -7,7 +7,8 @@
 # The author certificate has to stay the same between releases, or the TV refuses the update (uninstall first). Set
 # the secrets TIZEN_AUTHOR_P12 (the .p12, base64) and TIZEN_AUTHOR_PASSWORD to use yours; without them a certificate
 # made by the first run is kept in this repository's Actions cache (private to it; GitHub drops a cache unused for
-# 7 days, and then the next release comes with a new one).
+# 7 days, and then the next release comes with a new one). Tizen's Developers CA, which signs author certificates,
+# runs out on 2027-01-01: author certificates end with it.
 name: Samsung release
 
 on:
@@ -35,11 +36,19 @@ jobs:
       # tizen.js signs packages without Tizen Studio: the same signer TizenBrew Installer uses, pinned to a commit.
       - name: tizen.js
         run: npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/tizenjs" "github:reisxd/tizen.js#45b00106149d0c8eff74ead4a979c909dd80efd6"
+      # Tizen's own certificates (the Developers CA that signs author certificates, and the public distributor), as
+      # Tizen Studio's certificate generator carries them. tizen.js finds them here.
+      - name: Tizen certificates
+        run: |
+          curl -fsSL https://download.tizen.org/sdk/tizenstudio/official/binary/certificate-generator_0.1.4_ubuntu-64.zip -o "$RUNNER_TEMP/cg.zip"
+          unzip -q "$RUNNER_TEMP/cg.zip" 'data/tools/certificate-generator/certificates/*' -d "$RUNNER_TEMP/cg"
+          mkdir -p ~/share/.tizen-cert
+          cp -r "$RUNNER_TEMP/cg/data/tools/certificate-generator/certificates/." ~/share/.tizen-cert/
       - name: Author certificate kept between runs
         uses: actions/cache@v4
         with:
           path: ~/.tv-home-author
-          key: tizen-author-v1
+          key: tizen-author-v2
       - name: Sign
         env:
           AUTHOR_P12: ${{ secrets.TIZEN_AUTHOR_P12 }}
@@ -51,17 +60,35 @@ jobs:
             printf '%s' "$AUTHOR_P12" | base64 -d > "$cert"
             pass="$AUTHOR_PASSWORD"
           else
-            mkdir -p ~/.tv-home-author
-            cert=~/.tv-home-author/author.p12
+            dir=~/.tv-home-author
+            cert="$dir/author.p12"
             pass=tv-home-author
             if [ ! -f "$cert" ]; then
-              node "$tizenjs" create-tizen-cert --name "TV Home" --password "$pass" --privilege public --output "$cert"
+              # As Tizen Studio makes one (tizen.js's create-tizen-cert packs the CA's key instead of the author's, so
+              # its signatures never verify): a 1024-bit key, signed by the Tizen Developers CA, for code signing, valid
+              # as long as that CA. 3DES in the .p12, which node-forge reads.
+              mkdir -p "$dir"
+              ca=~/share/.tizen-cert/developer
+              openssl genrsa -out "$dir/author.key" 1024
+              openssl req -new -key "$dir/author.key" -subj "/CN=TV Home/O=TV Home" -out "$RUNNER_TEMP/author.csr"
+              end=$(openssl x509 -enddate -noout -in "$ca/tizen-developer-ca.cer" | cut -d= -f2)
+              days=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
+              printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=digitalSignature\nextendedKeyUsage=codeSigning\n' > "$RUNNER_TEMP/ext.cnf"
+              openssl x509 -req -in "$RUNNER_TEMP/author.csr" -CA "$ca/tizen-developer-ca.cer" \
+                -CAkey "$ca/tizen-developer-ca-privatekey.pem" -passin pass:tizencertificatefordevelopercaroqkfwk \
+                -set_serial "0x$(openssl rand -hex 8)" -days "$days" -sha512 -extfile "$RUNNER_TEMP/ext.cnf" -out "$dir/author.crt"
+              openssl pkcs12 -export -inkey "$dir/author.key" -in "$dir/author.crt" -certfile "$ca/tizen-developer-ca.cer" \
+                -name UserCertificate -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 -passout "pass:$pass" -out "$cert"
+              rm -f "$dir/author.key"
             fi
           fi
           node "$tizenjs" build FreeMyTV-tizen.wgt -t wgt -o signed.wgt --author "$cert" --authorPwd "$pass" -p public
           mv signed.wgt FreeMyTV-tizen.wgt
-          # Both signatures in, or no release.
-          test "$(unzip -l FreeMyTV-tizen.wgt | grep -cE ' (author-signature|signature1)\.xml$')" = 2
+      # Both signatures verify against their certificates, and every file against its digest, or no release.
+      - name: Check the signatures
+        run: |
+          pip install --quiet lxml cryptography
+          python3 tools/verify_wgt.py FreeMyTV-tizen.wgt
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
