@@ -2,7 +2,8 @@
  * What the home screen shows, kept in localStorage so it opens with numbers:
  *  - the picks: what's trending this week and recent releases, only from the streaming apps on this TV (TMDB, with
  *    the person's own free key from config.properties), 3 per hour (up to 6 in Home Settings);
- *  - weather, sunrise and sunset (Open-Meteo, every 30 min).
+ *  - weather, sunrise and sunset (Open-Meteo, every 30 min);
+ *  - each console's trending games, with pictures and trailers (RAWG, with the person's own free key, every 12 h).
  * Settings changed on the TV (Prefs) win over config.properties, as on Android. Built without a city (--generic), the
  * TV's time zone gives the city, and its country the currency and the region (zones.js).
  */
@@ -88,6 +89,10 @@ var Prefs = (function () {
     longitude: function () { return pick('longitude', Place.lon); },
     /** The TMDB key typed on the TV (Home Settings → TMDB key), or config.properties' ('' for none). */
     tmdbKey: function () { return String(pick('tmdbKey', CONFIG.tmdbKey || '')).trim(); },
+    /** The RAWG key typed on the TV (Home Settings → RAWG key): the consoles' trending games. */
+    rawgKey: function () { return String(pick('rawgKey', '')).trim(); },
+    /** Game trailers behind the consoles, once the focus rests on one. */
+    bgVideo: function () { return pick('bgVideo', true) !== false; },
     /** True when the key in use was typed on the TV (Remove takes it back to config.properties'). */
     tmdbKeyOnTV: function () { return v.tmdbKey !== undefined; },
     setCity: function (name, lat, lon) { v.city = name; v.latitude = lat; v.longitude = lon; save(); this.version++; },
@@ -227,6 +232,95 @@ var Data = (function () {
         out.push({label: label, city: city, lat: r.latitude.toFixed(4), lon: r.longitude.toFixed(4)});
       }
       done(null, out);
+    });
+  }
+
+  // MARK: - Games (RAWG): what's popular on each console, for the consoles' art
+
+  // RAWG's platform ids by console; the Switch 2 is looked up by its slug (it came after these).
+  var PLATFORMS = {xbox: 186, ps5: 187, 'switch': 7, switch2: null};
+  var RAWG = 'https://api.rawg.io/api';
+  var GKEY = Prefs.rawgKey();
+  var gcache = stored('games') || {};
+  var games = gcache.byConsole || {}, gamesAt = gcache.at || 0, gamesKey = gcache.key || '';
+  var fetchingGames = false, gamesFailedAt = 0, movies = {};
+
+  function rawg(path, done, key) {
+    key = key || GKEY;
+    get(RAWG + path + (path.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(key), {Accept: 'application/json'}, done);
+  }
+
+  /** Asks RAWG whether a key works before it's saved: done(error), with error.rejected when RAWG said no. */
+  function checkRawg(key, done) {
+    rawg('/games?page_size=1', function (err) {
+      if (err && /rejected|HTTP 40[13]/.test(err.message)) err.rejected = true;
+      done(err || null);
+    }, key);
+  }
+
+  /** RAWG's CDN resizes: the originals are photos of several MB, too much for a TV's memory. */
+  function smaller(url) {
+    return url ? url.replace('/media/games/', '/media/resize/1280/-/games/').replace('/media/screenshots/', '/media/resize/1280/-/screenshots/') : '';
+  }
+
+  /** A console's most added games of the last two years: [{id, name, image, shots}]. */
+  function loadGames(platform, done) {
+    rawg('/games?platforms=' + platform + '&ordering=-added&page_size=12&dates=' + day(-730) + ',' + day(0), function (err, body) {
+      if (err) { done(err); return; }
+      var out = [], list = (body && body.results) || [];
+      for (var i = 0; i < list.length; i++) {
+        var g = list[i], shots = [];
+        if (!g.background_image) continue;
+        var ss = g.short_screenshots || [];
+        for (var j = 1; j < ss.length && shots.length < 3; j++) if (ss[j].image) shots.push(smaller(ss[j].image));
+        out.push({id: g.id, name: g.name, image: smaller(g.background_image), shots: shots});
+      }
+      done(null, out);
+    });
+  }
+
+  function refreshGames() {
+    if (!GKEY || fetchingGames) return;
+    var t = Date.now();
+    if (gamesKey === GKEY.slice(-6) && t - gamesAt < 12 * 3600000 && t >= gamesAt) return;
+    if (gamesFailedAt && t - gamesFailedAt < 10 * 60000 && t >= gamesFailedAt) return;
+    fetchingGames = true;
+    var got = {}, left = 1;   // the platforms' lookup below counts as one
+    function finish() {
+      if (--left) return;
+      fetchingGames = false;
+      if (!got.ps5 && !got.xbox && !got['switch']) { gamesFailedAt = Date.now(); return; }
+      games = got;
+      gamesAt = Date.now();
+      gamesKey = GKEY.slice(-6);
+      store('games', {byConsole: games, at: gamesAt, key: gamesKey});
+      changed();
+    }
+    function one(key, platform) {
+      left++;
+      loadGames(platform, function (err, list) {
+        if (!err) got[key] = list;
+        finish();
+      });
+    }
+    one('xbox', PLATFORMS.xbox);
+    one('ps5', PLATFORMS.ps5);
+    one('switch', PLATFORMS['switch']);
+    rawg('/platforms?page_size=60', function (err, body) {
+      var list = (body && body.results) || [];
+      for (var i = 0; i < list.length; i++) if (/switch-2/.test(list[i].slug || '')) PLATFORMS.switch2 = list[i].id;
+      if (PLATFORMS.switch2) one('switch2', PLATFORMS.switch2);
+      finish();
+    });
+  }
+
+  /** A game's trailer (an mp4, RAWG lists Steam's), or '' when it has none: done(url). Asked once per game. */
+  function movie(id, done) {
+    if (movies[id] !== undefined) { done(movies[id]); return; }
+    rawg('/games/' + id + '/movies', function (err, body) {
+      var r = !err && body && body.results && body.results[0];
+      movies[id] = r && r.data ? r.data['480'] || r.data.max || '' : '';
+      done(movies[id]);
     });
   }
 
@@ -552,7 +646,7 @@ var Data = (function () {
     appFor: appFor,
     usable: usable,
     services: services,
-    refresh: function () { refreshWeather(); refreshRecs(); },
+    refresh: function () { refreshWeather(); refreshRecs(); refreshGames(); },
     settingsChanged: function () { changed(); },
     findCity: findCity,
     /** Another city picked: its weather now (none shown until it comes). */
@@ -561,6 +655,12 @@ var Data = (function () {
     get weatherAt() { return weatherAt; },
     hasKey: function () { return !!KEY; },
     checkKey: checkKey,
+    checkRawg: checkRawg,
+    /** A console's trending games (the Switch 2 has the Switch's until RAWG lists its own). */
+    games: function (key) { return (games[key] && games[key].length) ? games[key] : key === 'switch2' ? games['switch'] || [] : []; },
+    movie: movie,
+    /** A RAWG key typed (or removed) on the TV: the games come again with it, or go. */
+    rawgChanged: function () { GKEY = Prefs.rawgKey(); gamesAt = 0; gamesFailedAt = 0; if (!GKEY) { games = {}; store('games', null); } refreshGames(); changed(); },
     /** A key typed (or removed) on the TV: the picks come again with it, or go. */
     keyChanged: function () { KEY = Prefs.tmdbKey(); recsError = ''; failedAt = 0; refreshRecs(); changed(); },
     recsError: function () { return recsError; },

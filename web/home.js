@@ -434,6 +434,7 @@
     }
     if (lines[st.line]) reveal(st.line);
     setClass(body, 'deep', deep);
+    if (deep && video) stopVideo();
     var y = deep ? TOP_DEEP - lines[st.line].y : 0;
     $('rows').style.webkitTransform = $('rows').style.transform = 'translateY(' + y + 'px)';
     renderHero();
@@ -560,6 +561,7 @@
     function add(title, kind, items) { if (items.length) out.push({title: title, kind: kind, items: items}); }
     var picks = Data.showcase().filter(function (p) { return p.backdrop; });
     if (tab === 'home') {
+      add(L('Continuar', 'Continue'), 'console', recentItems());
       add('Games', 'console', CONSOLES.map(consoleItem));
       add('Streaming', 'app', shelf.map(appItem));
       add(L('Em alta nos seus apps', 'Trending on your apps'), 'pick', picks.map(pickItem));
@@ -660,25 +662,23 @@
       kind: 'app', label: app.title, go: isMusic(app) ? L('Ouvir', 'Listen') : L('Abrir', 'Open'),
       draw: function (box, line) { face(app, box, wordFit(app.title, line.w, line.w > 300 ? 46 : 38)); },
       hero: function () {
-        var p = trendingOn(app), about = ABOUT[key];
+        var about = ABOUT[key], picks = trendingOn(app);
         var kind = isMusic(app) ? L('Música', 'Music') : isGame(app) ? L('Jogos na nuvem', 'Cloud gaming') : k || Data.services().some(function (x) { return Data.appFor(x.key) === app; }) ? 'Streaming' : 'App';
-        if (p) {
-          return {kicker: app.title + ' · ' + L('Em alta', 'Trending'), name: p.title, info: p.meta,
-            desc: L('OK abre o ' + app.title + '.', 'OK opens ' + app.title + '.'),
-            art: {img: Data.image(p.backdrop, 'w1280')}};
-        }
+        var art = {colors: ART[key] || [app.color ? darken(app.color, 0.9) : '#3A3A40', '#050506'], logo: LOGOS[key] || ''};
+        // With TMDB's picks: what's trending on it, one title after another behind the app's name.
+        if (picks.length) art.slides = picks.map(function (p) { return {img: Data.image(p.backdrop, 'w1280'), label: p.title}; });
         return {kicker: kind, name: app.title, desc: about ? L(about[0], about[1]) : L('Pressione OK para abrir.', 'Press OK to open.'),
-          art: {colors: ART[key] || [app.color ? darken(app.color, 0.9) : '#3A3A40', '#050506'], logo: LOGOS[key] || ''}};
+          caption: picks.length ? L('Em alta: ', 'Trending: ') : '', art: art};
       },
-      run: launcher(app.id, app.title)
+      run: function () { remember({k: 'app', id: app.id}); launcher(app.id, app.title)(); }
     };
   }
 
-  /** A pick from this app (TMDB's trending titles, when there's a key), for its art. */
+  /** The picks from this app (TMDB's trending titles, when there's a key), for its art. */
   function trendingOn(app) {
-    var list = Data.showcase();
-    for (var i = 0; i < list.length; i++) if (list[i].app && list[i].backdrop && Data.appFor(list[i].app) === app) return list[i];
-    return null;
+    var list = Data.showcase(), out = [];
+    for (var i = 0; i < list.length && out.length < 6; i++) if (list[i].app && list[i].backdrop && Data.appFor(list[i].app) === app) out.push(list[i]);
+    return out;
   }
 
   function consoleItem(c) {
@@ -700,11 +700,16 @@
         el('div', 'via', box, 'HDMI ' + consoleHdmi(c));
       },
       hero: function () {
-        var n = consoleHdmi(c);
+        var n = consoleHdmi(c), list = Data.games(c.key), art = {colors: c.art, logo: c.logo};
+        // With a RAWG key: the console's trending games, one after another, and a trailer once the focus rests.
+        if (list.length) {
+          art.slides = list.slice(0, 8).map(function (g) { return {img: g.image, label: g.name, game: g}; });
+          art.trailers = true;
+        }
         return {kicker: c.maker + ' · ' + L('Console', 'Console'), name: c.name, badge: 'HDMI ' + n,
-          art: {colors: c.art, logo: c.logo}};
+          caption: list.length ? L('Em alta: ', 'Trending: ') : '', art: art};
       },
-      run: function () { playConsole(c); }
+      run: function () { remember({k: 'console', id: c.key}); playConsole(c); }
     };
   }
 
@@ -723,8 +728,31 @@
           name: p.title, info: p.meta, desc: app ? L('OK abre no ' + app.title + '.', 'OK opens it on ' + app.title + '.') : '',
           art: {img: Data.image(p.backdrop, 'w1280')}};
       },
-      run: function () { if (app) launcher(app.id, app.title)(); }
+      run: function () {
+        if (!app) return;
+        remember({k: 'pick', id: p.id, p: {id: p.id, kind: p.kind, title: p.title, backdrop: p.backdrop, poster: p.poster, meta: p.meta, app: p.app}});
+        launcher(app.id, app.title)();
+      }
     };
+  }
+
+  // MARK: - Continue: what was last opened from this screen (the TV doesn't tell what's playing inside its apps)
+
+  function remember(entry) {
+    var list = Prefs.get('recent', []).filter(function (e) { return !(e.k === entry.k && e.id === entry.id); });
+    list.unshift(entry);
+    Prefs.set('recent', list.slice(0, 8));
+  }
+
+  function recentItems() {
+    var out = [], list = Prefs.get('recent', []);
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i], j;
+      if (e.k === 'console') { for (j = 0; j < CONSOLES.length; j++) if (CONSOLES[j].key === e.id) out.push(consoleItem(CONSOLES[j])); }
+      else if (e.k === 'app') { for (j = 0; j < apps.length; j++) if (apps[j].id === e.id) out.push(appItem(apps[j])); }
+      else if (e.k === 'pick' && e.p && e.p.backdrop && Data.appFor(e.p.app)) out.push(pickItem(e.p));
+    }
+    return out;
   }
 
   function actionItem(symbol, name, run, desc, off) {
@@ -804,7 +832,7 @@
     }
     for (d = 0; d < shown.length; d++) setClass(shown[d], 'on', d === st.page % featured.length);
     dots.style.visibility = featured.length > 1 ? '' : 'hidden';
-    var sig = [h.kicker, h.name, h.info, h.badge, h.desc].join('|');
+    var sig = [h.kicker, h.name, h.info, h.badge, h.desc, h.caption].join('|');
     if (sig !== heroNow) {
       heroNow = sig;
       var parts = text.children;
@@ -814,6 +842,8 @@
       parts[2].innerHTML = '';
       if (h.badge) el('span', 'badge', parts[2], h.badge);
       if (h.info) parts[2].appendChild(document.createTextNode(h.info));
+      heroCaption = h.caption || '';
+      if (heroCaption) el('span', 'now', parts[2]);   // the slideshow writes in it what's showing behind
       parts[3].textContent = h.desc || '';
       var go = cta.querySelector('.go'), icon = cta.querySelector('.sym');
       go.textContent = it.go || L('Abrir', 'Open');
@@ -944,6 +974,7 @@
   }
 
   var artKey = null, artFront = 'artA', artTimer = 0, ART_FOLLOW_MS = 260;
+  var artNow = null, artNowKey = '', artSlide = 0, heroCaption = '', SLIDE_MS = 7000;
 
   /** The art follows the focus once it rests: a quick run along a row fades once. */
   function artSoon(art) {
@@ -953,9 +984,35 @@
 
   var marks = {};   // logo url -> its loaded image, for the art
 
+  function artId(art) {
+    return art.slides ? 'slides:' + art.slides.length + ':' + art.slides[0].img : art.img || (art.colors.join(',') + art.logo);
+  }
+
+  /** New art (the focus moved): its first slide, and its trailer once the focus rests. */
   function showArt(art) {
     if (!art) return;
-    var key = art.img || (art.colors.join(',') + art.logo);
+    var id = artId(art);
+    if (id === artNowKey) return;
+    artNowKey = id;
+    artNow = art;
+    artSlide = 0;
+    stopVideo();
+    showFrame();
+    videoSoon();
+  }
+
+  /** What's in the hero's caption: the slide showing behind ("Trending: Astro Bot"). */
+  function setCaption(label) {
+    var now = $('hero').querySelector('.info .now');
+    // after the badge, nothing between them (the badge sets itself apart); after text, a dot
+    var after = now && now.previousSibling && now.previousSibling.nodeType === 3;
+    if (now) now.textContent = heroCaption && label ? (after ? ' · ' : '') + heroCaption + label : '';
+  }
+
+  /** The slide that's due (or the art), painted into the canvas behind and faded in. */
+  function showFrame() {
+    var art = artNow, slide = art.slides ? art.slides[artSlide % art.slides.length] : null;
+    var key = artNowKey + '#' + artSlide, src = slide ? slide.img : art.img;
     if (key === artKey) return;
     artKey = key;
     var next = artFront === 'artA' ? 'artB' : 'artA', canvas = $(next);
@@ -966,19 +1023,21 @@
       setClass($(artFront), 'on', false);
       artFront = next;
       frostArt(art, img, mark);
+      setCaption(slide ? slide.label : '');
     }
-    if (art.img) {
+    if (src) {
       var img = new Image(), tried = false;
-      img.crossOrigin = 'anonymous';   // TMDB answers CORS: the canvas stays readable for the glass
+      img.crossOrigin = 'anonymous';   // TMDB and RAWG answer CORS: the canvas stays readable for the glass
       img.onload = function () { draw(img, null); };
       img.onerror = function () {   // a TV that can't load it that way: as before, without the glass's copy
-        if (tried) return;
+        if (tried) { if (art.colors) draw(null, null); return; }
         tried = true;
         img = new Image();
         img.onload = function () { draw(img, null); };
-        img.src = art.img;
+        img.onerror = function () { if (art.colors) draw(null, null); };
+        img.src = src;
       };
-      img.src = art.img;
+      img.src = src;
     } else if (art.logo) {
       var m = marks[art.logo];
       if (m && m.complete) { draw(null, m); return; }
@@ -997,6 +1056,61 @@
     } else draw(null, null);
   }
 
+  // The slides turn by themselves while a trailer isn't playing.
+  setInterval(function () {
+    if (!artNow || !artNow.slides || artNow.slides.length < 2 || video || saverOn || ambientOn) return;
+    artSlide++;
+    showFrame();
+  }, SLIDE_MS);
+
+  // MARK: - Trailers: a game's video behind its console, once the focus rests there (Home Settings can turn them off)
+
+  var video = null, videoTimer = 0, VIDEO_AFTER_MS = 2500;
+
+  function videoSoon() {
+    clearTimeout(videoTimer);
+    var art = artNow;
+    if (!art || !art.trailers || !Prefs.bgVideo()) return;
+    videoTimer = setTimeout(function () {
+      if (artNow !== art || saverOn || ambientOn || sheetOpen() || hasClass(body, 'deep')) return;
+      var slide = art.slides[artSlide % art.slides.length];
+      if (!slide.game) return;
+      Data.movie(slide.game.id, function (url) {
+        if (artNow !== art || !url || video) return;
+        setCaption(slide.label);
+        playVideo(url);
+      });
+    }, VIDEO_AFTER_MS);
+  }
+
+  function playVideo(url) {
+    var v = document.createElement('video');
+    v.className = 'bgvideo';
+    v.muted = true;
+    v.loop = true;
+    v.autoplay = true;
+    v.setAttribute('muted', '');
+    v.setAttribute('playsinline', '');
+    v.oncanplay = function () { v.oncanplay = null; setClass(v, 'on', true); setClass($('sky'), 'playing', true); };
+    v.onerror = function () { if (video === v) stopVideo(); };
+    v.src = url;
+    $('sky').insertBefore(v, $('sky').querySelector('.vshade'));
+    video = v;
+    try { v.play(); } catch (e) {}
+  }
+
+  function stopVideo() {
+    clearTimeout(videoTimer);
+    if (!video) return;
+    var v = video;
+    video = null;
+    setClass($('sky'), 'playing', false);
+    try { v.pause(); } catch (e) {}
+    v.removeAttribute('src');
+    try { v.load(); } catch (e) {}   // lets the TV's decoder go
+    if (v.parentNode) v.parentNode.removeChild(v);
+  }
+
   /**
    * The art at half size, as the full-screen layers drew it: a photo (or the brand's colors and its logo, large and
    * quiet), then the shade at the left for the text and the darker floor under the rows.
@@ -1009,7 +1123,7 @@
       // cover, from the top (the faces in a backdrop are rarely at its bottom)
       var s = Math.max(W / img.naturalWidth, H / img.naturalHeight), w = img.naturalWidth * s, h = img.naturalHeight * s;
       try { g.drawImage(img, (W - w) / 2, 0, w, h); } catch (e) {}
-    } else {
+    } else if (art.colors) {
       var cx = 0.74 * W, cy = 0.26 * H;
       grad = g.createRadialGradient(cx, cy, 0, cx, cy, Math.sqrt(cx * cx + (H - cy) * (H - cy)));
       grad.addColorStop(0, art.colors[0]);
@@ -1105,7 +1219,11 @@
         step: function (d) { if (d >= 0) openCities(); }}
     );
     rows.push({label: tr('TMDB key'), value: Prefs.tmdbKey().length >= 4 ? '•••• ' + Prefs.tmdbKey().slice(-4) : tr('Not set'), opens: true, tmdb: true,
-      step: function (d) { if (d >= 0) openKey(); }});
+      step: function (d) { if (d >= 0) openKey('tmdb'); }});
+    rows.push({label: L('Chave do RAWG (jogos)', 'RAWG key (games)'), value: Prefs.rawgKey().length >= 4 ? '•••• ' + Prefs.rawgKey().slice(-4) : tr('Not set'),
+      opens: true, rawg: true, step: function (d) { if (d >= 0) openKey('rawg'); }});
+    rows.push({label: L('Vídeos de fundo', 'Background videos'), toggle: Prefs.bgVideo(),
+      step: function () { Prefs.set('bgVideo', !Prefs.bgVideo()); if (!Prefs.bgVideo()) stopVideo(); }});
     var sv = Data.services();
     if (sv.length) {
       var someOff = false;   // only the services this TV has count
@@ -1338,22 +1456,43 @@
     else closeCities(true);
   }
 
-  // MARK: - TMDB key: typed on the TV, so builds without one (the releases) get the picks too; TMDB checks it first
+  // MARK: - Keys typed on the TV: TMDB's (the picks) and RAWG's (the consoles' games); each service checks its key first
 
-  var keyStatus = '', keyWarn = false, keyTimer = 0, keySeq = 0, keyAsking = false;
+  var keyStatus = '', keyWarn = false, keyTimer = 0, keySeq = 0, keyAsking = false, keyFor = 'tmdb';
 
-  function keyRows() { return keyAsking ? 2 : Prefs.tmdbKeyOnTV() ? 3 : 2; }
-
-  function keySteps() {
-    return tr("The key brings the picks: what's trending on your streaming apps, with their photos on the screensaver.") + '\n'
-      + tr('Free, and it takes two minutes:') + '\n1. ' + tr('Create an account at themoviedb.org.')
-      + '\n2. ' + tr('Open Settings → API and request a developer key.');
+  /** What differs between the two keys the sheet edits. */
+  function keyKind() {
+    if (keyFor === 'rawg') {
+      return {pref: 'rawgKey', onTV: Prefs.rawgKey() !== '', row: 'rawg', check: Data.checkRawg, changed: Data.rawgChanged,
+        title: L('Chave do RAWG', 'RAWG key'), askRemove: L('Remover a chave do RAWG?', 'Remove the RAWG key?'),
+        placeholder: L('Chave de API do RAWG', 'RAWG API key'),
+        checking: L('Conferindo a chave com o RAWG…', 'Checking the key with RAWG…'),
+        bad: L('Isso não parece uma chave do RAWG.', "That doesn't look like a RAWG key."),
+        refused: L('O RAWG recusou esta chave.', 'RAWG refused this key.'),
+        unreachable: function (m) { return L('Não deu para falar com o RAWG: ', "Couldn't reach RAWG: ") + m; },
+        saved: L('Salva. Os jogos chegam em instantes.', 'Saved. The games arrive in a moment.'),
+        steps: L('A chave traz os jogos em alta em cada console, com as imagens e os trailers deles no fundo.',
+          "The key brings each console's trending games, with their pictures and trailers in the background.") + '\n'
+          + L('Grátis, em dois minutos:', 'Free, and it takes two minutes:') + '\n1. ' + L('Crie uma conta em rawg.io.', 'Create an account at rawg.io.')
+          + '\n2. ' + L('Abra rawg.io/apidocs e peça uma chave.', 'Open rawg.io/apidocs and request a key.')};
+    }
+    return {pref: 'tmdbKey', onTV: Prefs.tmdbKeyOnTV(), row: 'tmdb', check: Data.checkKey, changed: Data.keyChanged,
+      title: tr('TMDB key'), askRemove: tr('Remove the TMDB key?'), placeholder: tr('API Read Access Token or API Key'),
+      checking: tr('Checking the key with TMDB…'), bad: tr("That doesn't look like a TMDB key."), refused: tr('TMDB refused this key.'),
+      unreachable: function (m) { return trf("Couldn't reach TMDB: {error}", {error: m}); },
+      saved: tr('Saved. The picks arrive in a moment.'),
+      steps: tr("The key brings the picks: what's trending on your streaming apps, with their photos on the screensaver.") + '\n'
+        + tr('Free, and it takes two minutes:') + '\n1. ' + tr('Create an account at themoviedb.org.')
+        + '\n2. ' + tr('Open Settings → API and request a developer key.')};
   }
+
+  function keyRows() { return keyAsking ? 2 : keyKind().onTV ? 3 : 2; }
 
   function renderKey() {
     var box = $('keypick').firstChild, old = fieldOf('keypick'), typed = old ? old.value : '', inField = typingIn('keypick');
+    var k = keyKind();
     box.innerHTML = '';
-    el('div', 'title', box, keyAsking ? tr('Remove the TMDB key?') : tr('TMDB key'));
+    el('div', 'title', box, keyAsking ? k.askRemove : k.title);
     var list = el('div', 'list', box), holder = el('div', 'rows', list);
     list.style.height = keyRows() * 78 + 'px';
     if (keyAsking) {
@@ -1362,21 +1501,23 @@
       updateFocus();
       return;
     }
-    var keyField = textField(holder, Z.KEY, typed, tr('API Read Access Token or API Key'), tr('TMDB key'));
-    // A v3 key is lowercase hex: the TV's keyboard mustn't capitalize it (the city's field wants capitals).
+    var keyField = textField(holder, Z.KEY, typed, k.placeholder, k.title);
+    // Keys are lowercase hex: the TV's keyboard mustn't capitalize them (the city's field wants capitals).
     keyField.setAttribute('autocapitalize', 'none');
     keyField.setAttribute('autocorrect', 'off');
     var save = el('div', 'row', holder, tr('Save'));
     sym('chevron_right', el('span', 'value', save));
     hover(save, Z.KEY, 1);
-    if (Prefs.tmdbKeyOnTV()) hover(el('div', 'row', holder, tr('Remove the key')), Z.KEY, 2);
+    if (k.onTV) hover(el('div', 'row', holder, tr('Remove the key')), Z.KEY, 2);
     if (keyStatus) setClass(el('div', 'hint', box, keyStatus), 'warn', keyWarn);
-    el('div', 'hint steps', box, keySteps());
+    el('div', 'hint steps', box, k.steps);
     if (inField) openField('keypick');
     updateFocus();
   }
 
-  function openKey() {
+  /** kind: 'tmdb' or 'rawg'. */
+  function openKey(kind) {
+    keyFor = kind;
     setClass($('settings'), 'open', false);
     st.zone = Z.KEY;
     st.key = 0;
@@ -1392,7 +1533,7 @@
     keyStatus = text;
     keyWarn = !!warn;
     clearTimeout(keyTimer);
-    if (text && text !== tr('Checking the key with TMDB…')) keyTimer = setTimeout(function () {
+    if (text && text !== keyKind().checking) keyTimer = setTimeout(function () {
       keyStatus = '';
       var line = st.zone === Z.KEY && $('keypick').querySelector('.hint:not(.steps)');
       if (line) line.parentNode.removeChild(line);
@@ -1406,32 +1547,34 @@
   }
 
   function saveKey() {
-    var f = fieldOf('keypick'), typed = f ? f.value : '', key = cleanKey(typed);
+    var f = fieldOf('keypick'), typed = f ? f.value : '', key = cleanKey(typed), k = keyKind();
     closeField('keypick');
     if (!typed.replace(/\s+/g, '')) { st.key = 0; openField('keypick'); updateFocus(); return; }
-    if (keyStatus === tr('Checking the key with TMDB…')) return;
-    if (!key) { setKeyStatus(tr("That doesn't look like a TMDB key."), true); return; }
-    setKeyStatus(tr('Checking the key with TMDB…'));
+    if (keyStatus === k.checking) return;
+    if (!key) { setKeyStatus(k.bad, true); return; }
+    setKeyStatus(k.checking);
     var mine = ++keySeq;   // an answer for a sheet already closed is dropped
-    Data.checkKey(key, function (err) {
+    k.check(key, function (err) {
       if (mine !== keySeq || st.zone !== Z.KEY) return;
-      if (err) { setKeyStatus(err.rejected ? tr('TMDB refused this key.') : trf("Couldn't reach TMDB: {error}", {error: err.message}), true); return; }
-      Prefs.set('tmdbKey', key);
+      if (err) { setKeyStatus(err.rejected ? k.refused : k.unreachable(err.message), true); return; }
+      Prefs.set(k.pref, key);
       if (fieldOf('keypick')) fieldOf('keypick').value = '';
-      Data.keyChanged();
-      setKeyStatus(tr('Saved. The picks arrive in a moment.'));
+      k.changed();
+      setKeyStatus(k.saved);
     });
   }
 
-  /** Back to config.properties' key (none in the releases): the picks go. */
+  /** Back to config.properties' key (none in the releases): the picks, or the games, go. */
   function removeKey() {
-    Prefs.set('tmdbKey', undefined);   // left out of the saved settings
+    var k = keyKind();
+    Prefs.set(k.pref, undefined);   // left out of the saved settings
     closeKey();
-    Data.keyChanged();
+    k.changed();
   }
 
-  /** Back on the TMDB key row of Home Settings. */
+  /** Back on this key's row of Home Settings. */
   function closeKey() {
+    var row = keyKind().row;
     closeField('keypick');
     setClass($('keypick'), 'open', false);
     keySeq++;
@@ -1441,7 +1584,7 @@
     var f = fieldOf('keypick');
     if (f) f.value = '';
     openSettings();
-    for (var i = 0; i < rowsNow.length; i++) if (rowsNow[i].tmdb) st.row = i;
+    for (var i = 0; i < rowsNow.length; i++) if (rowsNow[i][row]) st.row = i;
     updateFocus();
   }
 
@@ -1473,6 +1616,7 @@
       // How this TV draws the page: what decides the lite mode (tv.js), to quote when it's slow.
       [L('Tela', 'Screen'), window.innerWidth + '×' + window.innerHeight + ' @' + (window.devicePixelRatio || 1) + 'x'],
       [L('Memória', 'Memory'), navigator.deviceMemory ? navigator.deviceMemory + ' GB' : '—'],
+      [L('Dados de jogos', 'Game data'), 'RAWG.io'],
       [L('Modo leve', 'Lite mode'), /\bstill\b/.test(document.documentElement.className) ? L('Sem animações', 'No animations')
         : lite ? L('Ligado', 'On') : L('Desligado', 'Off')]
     ];
@@ -1768,6 +1912,7 @@
   }
 
   function showSaver() {
+    stopVideo();
     var photos = saverPhotos();
     saverOn = true;
     saverPick = null;
@@ -1824,6 +1969,7 @@
   var ambientOn = false, ambientTimer = 0;
 
   function showAmbient() {
+    stopVideo();
     if (ambientOn) return;
     var a = $('ambient');
     a.innerHTML = '';
@@ -1904,7 +2050,9 @@
   /** The rows again, when what they show changed (the picks came, an app was installed), keeping the focus. */
   var shown = '';
   function refreshRows(force) {
-    var sig = apps.length + ':' + shelf.length + ':' + inputs.length + ':' + Data.showcase().map(function (p) { return p.id + (p.app || ''); }).join(',');
+    var recent = Prefs.get('recent', []);
+    var sig = apps.length + ':' + shelf.length + ':' + inputs.length + ':' + Data.showcase().map(function (p) { return p.id + (p.app || ''); }).join(',')
+      + ':' + recent.map(function (e) { return e.k + e.id; }).join(',') + ':' + (Data.games('ps5').length + Data.games('xbox').length);
     if (!force && sig === shown) return;
     shown = sig;
     var line = st.line, col = st.col;
@@ -1984,7 +2132,7 @@
   document.addEventListener('webOSRelaunch', reopened);   // LG: opened again while running
   window.addEventListener('appcontrol', reopened);        // Samsung: the same
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) { hideSaver(); hideAmbient(); return; }
+    if (document.hidden) { hideSaver(); hideAmbient(); stopVideo(); return; }
     idleAt = Date.now();
     loadApps(function () { refreshRows(); Data.refresh(); });
   });

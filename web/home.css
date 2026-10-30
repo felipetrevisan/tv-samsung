@@ -69,6 +69,41 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   transition: opacity 0.6s, visibility 0s 0.6s;
 }
 #sky .art.on { opacity: 1; visibility: visible; -webkit-transition-delay: 0s; transition-delay: 0s; }
+/* A game's trailer over the art, with the art's shading on it so the text over it still reads. */
+#sky .bgvideo {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  object-fit: cover;
+  opacity: 0;
+  -webkit-transition: opacity 0.8s;
+  transition: opacity 0.8s;
+}
+#sky .bgvideo.on { opacity: 1; }
+#sky .vshade {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  display: none;
+  background: -webkit-linear-gradient(left, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0.38) 45%, rgba(0, 0, 0, 0) 72%);
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0.38) 45%, rgba(0, 0, 0, 0) 72%);
+}
+#sky .vshade::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 640px;
+  background: -webkit-linear-gradient(top, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.72) 55%, rgba(0, 0, 0, 0.9));
+  background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.72) 55%, rgba(0, 0, 0, 0.9));
+}
+#sky.playing .vshade { display: block; }
+
 /* Scrolled down past the first row: the art goes darker under the rows, as the Apple TV app does. */
 #sky::after {
   content: '';
@@ -252,6 +287,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   color: #1D1D1F;
   background: rgba(255, 255, 255, 0.88);
 }
+#hero .info .now { color: rgba(255, 255, 255, 0.82); font-weight: 600; }
 #hero .desc {
   margin-top: 12px;
   max-width: 860px;
