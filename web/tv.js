@@ -22,9 +22,12 @@ var TV = (function () {
   // lite and 55 with only the shadows off (#383). Samsungs under 2 GB get it only when they draw the page at twice its
   // size: none at a ratio of 1 has been measured. deviceMemory (webOS 5+, Tizen 5+) is the nearest power of two, so it
   // reads 1 up to about 1.5 GB.
+  // Those get `still` too (no transitions at all); a Samsung on Tizen 3 or newer keeps the focus's springs (transform
+  // only, cheap even there) and loses what costs: shadows, the glass's blur, long fades.
   var lowMemory = navigator.deviceMemory && navigator.deviceMemory <= 1;
-  if (tizen2 || (webos && lowMemory) || (samsung && lowMemory && (window.devicePixelRatio || 1) > 1)) {
-    document.documentElement.className += ' lite';
+  var still = tizen2 || (webos && lowMemory);
+  if (still || (samsung && lowMemory && (window.devicePixelRatio || 1) > 1)) {
+    document.documentElement.className += still ? ' lite still' : ' lite';
   }
 
   /** One Luna call; done(result) with null on failure. */

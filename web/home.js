@@ -474,9 +474,10 @@
     sym('settings', gear);
     hover(gear, Z.TABS, TABS.length);
     lensAt = null;
+    lensTab = -1;
   }
 
-  var lensAt = null, lensW = 0;
+  var lensAt = null, lensW = 0, lensTab = -1;
 
   /**
    * The clear lens under the selected tab, while the focus is elsewhere (on the bar, the focused tab is white): two
@@ -488,6 +489,8 @@
     var lens = $('tabbar').querySelector('.lens');
     if (!tab || !lens) return;
     setClass(lens, 'hide', st.zone === Z.TABS);
+    if (lensTab === st.tab && lensAt !== null) return;   // reading offsetLeft forces a layout on every key press
+    lensTab = st.tab;
     var x = tab.offsetLeft, w = tab.offsetWidth, parts = lens.children;
     if (x === lensAt && w === lensW) return;
     var first = lensAt === null, right = x >= lensAt;
@@ -815,7 +818,10 @@
       var go = cta.querySelector('.go'), icon = cta.querySelector('.sym');
       go.textContent = it.go || L('Abrir', 'Open');
       icon.style.webkitMaskImage = icon.style.maskImage = 'url(symbols/play.png)';
-      if (feat) frostAll();   // the button and the dots moved with the text's height
+      if (feat) {   // the button and the dots moved with the text's height
+        frostMoved([hero.querySelector('.cta'), hero.querySelector('.dots')]);
+        frostAll();
+      }
       if (heroDir) {   // the carousel turned: the text slides in from the side it came from
         setClass(text, 'turn', false);
         setClass(text, 'back', false);
@@ -863,31 +869,42 @@
     return {x: (r.left - s.left) / k, y: (r.top - s.top) / k};
   }
 
+  var frostURL = '';   // the art behind the glass, tiny, as an image (empty: the glass is plain)
+
   /**
-   * One glass piece: a canvas of about a 24th of its size holding the part of the art behind it, stretched over the
-   * piece (small layers: a screen-sized one per piece was too much for a TV's GPU). Drawn again only when the art or
-   * the piece's place changed.
+   * One glass piece: the tiny art stretched over the stage as its background, shifted to the piece's place, so it
+   * shows what's behind it, blurred. A background, not a canvas: a composited canvas under rounded corners costs
+   * the GPU an extra pass every frame. Set again only when the art or the piece's place changed.
    */
   function frostInto(node) {
-    var w = node.offsetWidth, h = node.offsetHeight;
-    if (!w || !h) return;
-    var p = stageXY(node), c = node.firstChild;
-    var stamp = frostGen + ':' + Math.round(p.x) + ',' + Math.round(p.y) + ':' + w + 'x' + h;
-    if (c && c.className === 'frost' && node.getAttribute('data-frost') === stamp) return;
-    node.setAttribute('data-frost', stamp);
-    if (!c || c.className !== 'frost') {
-      c = document.createElement('canvas');
-      c.className = 'frost';
-      node.insertBefore(c, node.firstChild);
+    // Where it is: measured once, and again only when it may have moved (frostMoved). Measuring forces a layout.
+    var p = node.frostXY;
+    if (!p) {
+      if (!node.offsetWidth) return;
+      p = node.frostXY = stageXY(node);
     }
-    var cw = Math.max(2, Math.ceil(w / 24)), ch = Math.max(2, Math.ceil(h / 24));
-    if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; }
-    var sw = Math.min(FW, w / 1920 * FW), sh = Math.min(FH, h / 1080 * FH);
-    var sx = Math.max(0, Math.min(FW - sw, p.x / 1920 * FW)), sy = Math.max(0, Math.min(FH - sh, p.y / 1080 * FH));
-    try { c.getContext('2d').drawImage(frostSrc, sx, sy, sw, sh, 0, 0, cw, ch); } catch (e) {}
+    var f = node.firstChild;
+    var stamp = frostGen + ':' + Math.round(p.x) + ',' + Math.round(p.y);
+    if (f && f.className === 'frost' && node.getAttribute('data-frost') === stamp) return;
+    node.setAttribute('data-frost', stamp);
+    if (!f || f.className !== 'frost') {
+      f = document.createElement('div');
+      f.className = 'frost';
+      node.insertBefore(f, node.firstChild);
+    }
+    f.style.backgroundImage = frostURL ? 'url(' + frostURL + ')' : 'none';
+    f.style.backgroundPosition = Math.round(-p.x) + 'px ' + Math.round(-p.y) + 'px';
+  }
+
+  var lite = /\blite\b/.test(document.documentElement.className);   // tv.js: no glass blur there
+
+  /** The pieces moved (the hero's text changed height, the font came): measured again at the next frostAll. */
+  function frostMoved(nodes) {
+    for (var i = 0; i < nodes.length; i++) if (nodes[i]) nodes[i].frostXY = null;
   }
 
   function frostAll() {
+    if (lite) return;
     var nodes = [$('tabbar').querySelector('.pill'), $('status'), $('hero').querySelector('.cta'), $('hero').querySelector('.dots')];
     for (var i = 0; i < nodes.length; i++) if (nodes[i]) frostInto(nodes[i]);
     frostSheets();
@@ -895,27 +912,33 @@
 
   /** The open sheet's box (built again on each change of its rows, so its canvas comes back here). */
   function frostSheets() {
+    if (lite) return;
     var boxes = document.querySelectorAll('.sheet.open .box');
-    for (var b = 0; b < boxes.length; b++) { setClass(boxes[b], 'glass', true); frostInto(boxes[b]); }
+    for (var b = 0; b < boxes.length; b++) {
+      setClass(boxes[b], 'glass', true);
+      boxes[b].frostXY = {x: 560, y: 150};   // home.css puts every box there (measured, it'd be off while it opens)
+      frostInto(boxes[b]);
+    }
   }
 
-  /** The glass takes the new art: a photo, or the brand's colors as the art draws them. */
-  function frostArt(art, img) {
+  var frostRaw = document.createElement('canvas');
+  frostRaw.width = FW;
+  frostRaw.height = FH;
+
+  /**
+   * The glass takes the new art, shaded as the screen shows it: painted tiny, then more vivid (the filter on the tiny
+   * copy only: on the whole art it cost the TV's CPU), then an image for the pieces' backgrounds.
+   */
+  function frostArt(art, img, mark) {
+    if (lite) return;
+    // painted small from the photo itself: copying the big canvas back from the GPU took the TV's CPU ~20 ms a turn
+    paintArt(frostRaw, art, img, mark);
     var g = frostSrc.getContext('2d');
-    // Glass shows what's behind it more vivid: done once here (a CSS filter on each piece cost every frame).
-    if ('filter' in g) g.filter = 'saturate(1.8) brightness(0.92)';
-    if (img) {
-      try { g.drawImage(img, 0, 0, FW, FH); } catch (e) {}
-    } else {
-      var cx = 0.74 * FW, cy = 0.26 * FH, r = Math.sqrt(cx * cx + (FH - cy) * (FH - cy));
-      var grad = g.createRadialGradient(cx, cy, 0, cx, cy, r);
-      grad.addColorStop(0, art.colors[0]);
-      grad.addColorStop(0.62, art.colors[1]);
-      grad.addColorStop(1, '#000');
-      g.fillStyle = grad;
-      g.fillRect(0, 0, FW, FH);
-    }
+    g.clearRect(0, 0, FW, FH);
+    if ('filter' in g) g.filter = 'saturate(1.8) brightness(1.1)';
+    g.drawImage(frostRaw, 0, 0);
     if ('filter' in g) g.filter = 'none';
+    try { frostURL = frostSrc.toDataURL('image/png'); } catch (e) { frostURL = ''; }   // a photo without CORS
     frostGen++;
     frostAll();
   }
@@ -928,43 +951,92 @@
     artTimer = setTimeout(function () { showArt(art); }, artKey === null ? 0 : ART_FOLLOW_MS);
   }
 
+  var marks = {};   // logo url -> its loaded image, for the art
+
   function showArt(art) {
     if (!art) return;
     var key = art.img || (art.colors.join(',') + art.logo);
     if (key === artKey) return;
     artKey = key;
-    var next = artFront === 'artA' ? 'artB' : 'artA', node = $(next);
-    function swap() {
+    var next = artFront === 'artA' ? 'artB' : 'artA', canvas = $(next);
+    function draw(img, mark) {
       if (artKey !== key) return;
-      setClass(node, 'on', true);
+      paintArt(canvas, art, img, mark);
+      setClass(canvas, 'on', true);
       setClass($(artFront), 'on', false);
       artFront = next;
+      frostArt(art, img, mark);
     }
-    node.innerHTML = '';
     if (art.img) {
-      var img = new Image();
-      img.onload = function () {
-        if (artKey !== key) return;
-        node.style.background = '#000';
-        node.style.backgroundImage = 'url(' + art.img + ')';
-        node.style.backgroundSize = 'cover';
-        node.style.backgroundPosition = 'center top';
-        swap();
-        frostArt(art, img);
+      var img = new Image(), tried = false;
+      img.crossOrigin = 'anonymous';   // TMDB answers CORS: the canvas stays readable for the glass
+      img.onload = function () { draw(img, null); };
+      img.onerror = function () {   // a TV that can't load it that way: as before, without the glass's copy
+        if (tried) return;
+        tried = true;
+        img = new Image();
+        img.onload = function () { draw(img, null); };
+        img.src = art.img;
       };
       img.src = art.img;
-      return;
-    }
-    var a = art.colors[0], b = art.colors[1];
-    node.style.background = '-webkit-radial-gradient(74% 26%, circle cover, ' + a + ', ' + b + ' 62%, #000)';
-    node.style.background = 'radial-gradient(circle farthest-corner at 74% 26%, ' + a + ', ' + b + ' 62%, #000)';
-    if (art.logo) {
-      var m = el('img', 'mark', node);
-      m.width = m.height = 520;
+    } else if (art.logo) {
+      var m = marks[art.logo];
+      if (m && m.complete) { draw(null, m); return; }
+      m = marks[art.logo] = new Image();
+      // drawn once into a small canvas: an SVG rasterized again at every turn of the carousel was the slowest step
+      m.onload = function () {
+        var c = document.createElement('canvas');
+        c.width = c.height = 520;   // the size it's drawn at on the full-size art
+        try { c.getContext('2d').drawImage(m, 0, 0, 520, 520); } catch (e) {}
+        c.complete = true;
+        marks[art.logo] = c;
+        draw(null, c);
+      };
+      m.onerror = function () { draw(null, null); };
       m.src = art.logo;
+    } else draw(null, null);
+  }
+
+  /**
+   * The art at half size, as the full-screen layers drew it: a photo (or the brand's colors and its logo, large and
+   * quiet), then the shade at the left for the text and the darker floor under the rows.
+   */
+  function paintArt(canvas, art, img, mark) {
+    var g = canvas.getContext('2d'), W = canvas.width, H = canvas.height, grad;
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, W, H);
+    if (img) {
+      // cover, from the top (the faces in a backdrop are rarely at its bottom)
+      var s = Math.max(W / img.naturalWidth, H / img.naturalHeight), w = img.naturalWidth * s, h = img.naturalHeight * s;
+      try { g.drawImage(img, (W - w) / 2, 0, w, h); } catch (e) {}
+    } else {
+      var cx = 0.74 * W, cy = 0.26 * H;
+      grad = g.createRadialGradient(cx, cy, 0, cx, cy, Math.sqrt(cx * cx + (H - cy) * (H - cy)));
+      grad.addColorStop(0, art.colors[0]);
+      grad.addColorStop(0.62, art.colors[1]);
+      grad.addColorStop(1, '#000');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, W, H);
+      if (mark) {
+        g.globalAlpha = 0.16;
+        var k = W / 960;
+        try { g.drawImage(mark, W - (75 + 260) * k, 75 * k, 260 * k, 260 * k); } catch (e) {}
+        g.globalAlpha = 1;
+      }
     }
-    swap();
-    frostArt(art, null);
+    grad = g.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0, 'rgba(0,0,0,0.78)');
+    grad.addColorStop(0.45, 'rgba(0,0,0,0.38)');
+    grad.addColorStop(0.72, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, W, H);
+    var top = H - H * 640 / 1080;
+    grad = g.createLinearGradient(0, top, 0, H);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.55, 'rgba(0,0,0,0.72)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.9)');
+    g.fillStyle = grad;
+    g.fillRect(0, top, W, H - top);
   }
 
   // MARK: - Status: the time and the weather
@@ -1397,7 +1469,12 @@
     var list = el('div', 'list', box), holder = el('div', 'rows', list);
     var rows = [
       [tr('Model'), info && info.model], [tr('Firmware'), info && info.firmware], [tr('System'), info && info.system],
-      [tr('IP address'), info && info.ip], [tr('Time zone'), TV.zone()], ['Free My TV', info && info.version]
+      [tr('IP address'), info && info.ip], [tr('Time zone'), TV.zone()], ['Free My TV', info && info.version],
+      // How this TV draws the page: what decides the lite mode (tv.js), to quote when it's slow.
+      [L('Tela', 'Screen'), window.innerWidth + '×' + window.innerHeight + ' @' + (window.devicePixelRatio || 1) + 'x'],
+      [L('Memória', 'Memory'), navigator.deviceMemory ? navigator.deviceMemory + ' GB' : '—'],
+      [L('Modo leve', 'Lite mode'), /\bstill\b/.test(document.documentElement.className) ? L('Sem animações', 'No animations')
+        : lite ? L('Ligado', 'On') : L('Desligado', 'Off')]
     ];
     for (var i = 0; i < rows.length; i++) {
       var row = el('div', 'row', holder), label = el('span', '', row, rows[i][0]);
@@ -1896,6 +1973,14 @@
   }
 
   window.addEventListener('resize', fit);
+  // The font came after the first layout: the tabs' widths changed, so the lens and the glass measure again.
+  window.addEventListener('load', function () {
+    lensAt = null;
+    lensTab = -1;
+    frostMoved([$('tabbar').querySelector('.pill'), $('status'), $('hero').querySelector('.cta'), $('hero').querySelector('.dots')]);
+    updateFocus();
+    frostAll();
+  });
   document.addEventListener('webOSRelaunch', reopened);   // LG: opened again while running
   window.addEventListener('appcontrol', reopened);        // Samsung: the same
   document.addEventListener('visibilitychange', function () {
