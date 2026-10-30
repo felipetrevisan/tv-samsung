@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://github.com/felipetrevisan/tv-samsung" version="1.4.1" viewmodes="maximized">
-    <tizen:application id="AtvHomeFMT.TVHome" package="AtvHomeFMT" required_version="2.3"/>
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://github.com/felipetrevisan/tv-samsung/tvhome-b" version="1.4.2" viewmodes="maximized">
+    <tizen:application id="TVHomeAtvB.TVHome" package="TVHomeAtvB" required_version="2.3"/>
     <name>TV Home</name>
     <author href="https://freemytv.io">Free My TV</author>
     <description>A fast, ad-free home screen.</description>
